@@ -62,7 +62,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 // ---------------------------------------------------------------
-// Scene setup
+// Scene setup with reduced pixel ratio
 // ---------------------------------------------------------------
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0a0a14);
@@ -70,8 +70,13 @@ scene.background = new THREE.Color(0x0a0a14);
 const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 1, 5000);
 camera.position.set(0, 0, 1200);
 
-const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+const renderer = new THREE.WebGLRenderer({
+  antialias: false,
+  powerPreference: 'high-performance',
+  precision: 'mediump'
+});
+// Critical fix: cap at 1.0, not 1.5
+renderer.setPixelRatio(1.0);
 renderer.setSize(innerWidth, innerHeight);
 document.body.appendChild(renderer.domElement);
 
@@ -82,6 +87,27 @@ controls.rotateSpeed = 0.7;
 controls.zoomSpeed = 0.8;
 controls.minDistance = 150;
 controls.maxDistance = 3000;
+
+// ---------------------------------------------------------------
+// Round point texture generated at runtime
+// ---------------------------------------------------------------
+function makeCircleTexture() {
+  const size = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const gradient = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+  gradient.addColorStop(0, 'rgba(255,255,255,1)');
+  gradient.addColorStop(0.6, 'rgba(255,255,255,1)');
+  gradient.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, size, size);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  return tex;
+}
 
 // ---------------------------------------------------------------
 // Type to color mapping
@@ -105,12 +131,12 @@ function colorForType(type) {
 // State
 // ---------------------------------------------------------------
 let neurons = null;
-let instancedMesh = null;
+let points = null;
+let colorAttr = null;
 let adjacency = null;
 let reverseAdjacency = null;
 let baseColors = null;
 let currentEdgeMesh = null;
-const NEURON_RADIUS = 2.4;
 
 // ---------------------------------------------------------------
 // Load brain.json
@@ -132,8 +158,7 @@ async function loadBrain() {
     if (done) break;
     chunks.push(value);
     received += value.length;
-    const mb = (received / 1024 / 1024).toFixed(1);
-    loadpct.textContent = mb + ' MB';
+    loadpct.textContent = (received / 1024 / 1024).toFixed(1) + ' MB';
     loadbar.style.width = Math.min(100, received / 250000) + '%';
   }
 
@@ -143,40 +168,54 @@ async function loadBrain() {
 }
 
 // ---------------------------------------------------------------
-// Build neurons
+// Build neurons as Points (huge performance boost)
 // ---------------------------------------------------------------
 function buildNeurons(data) {
   neurons = data.nodes;
   const count = neurons.length;
+
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
   baseColors = new Float32Array(count * 3);
-
-  const geo = new THREE.SphereGeometry(NEURON_RADIUS, 5, 4);
-  const mat = new THREE.MeshBasicMaterial();
-  instancedMesh = new THREE.InstancedMesh(geo, mat, count);
-  instancedMesh.frustumCulled = false;
-
-  const dummy = new THREE.Object3D();
 
   for (let i = 0; i < count; i++) {
     const n = neurons[i];
-    dummy.position.set(n.x, n.y, n.z);
-    dummy.updateMatrix();
-    instancedMesh.setMatrixAt(i, dummy.matrix);
+    positions[i * 3] = n.x;
+    positions[i * 3 + 1] = n.y;
+    positions[i * 3 + 2] = n.z;
 
-    const color = colorForType(n.type);
-    instancedMesh.setColorAt(i, color);
-    baseColors[i * 3] = color.r;
-    baseColors[i * 3 + 1] = color.g;
-    baseColors[i * 3 + 2] = color.b;
+    const c = colorForType(n.type);
+    colors[i * 3] = c.r;
+    colors[i * 3 + 1] = c.g;
+    colors[i * 3 + 2] = c.b;
+    baseColors[i * 3] = c.r;
+    baseColors[i * 3 + 1] = c.g;
+    baseColors[i * 3 + 2] = c.b;
   }
 
-  instancedMesh.instanceMatrix.needsUpdate = true;
-  instancedMesh.instanceColor.needsUpdate = true;
-  scene.add(instancedMesh);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+  const mat = new THREE.PointsMaterial({
+    size: 7,
+    sizeAttenuation: true,
+    vertexColors: true,
+    map: makeCircleTexture(),
+    transparent: true,
+    alphaTest: 0.1,
+    depthWrite: false
+  });
+
+  points = new THREE.Points(geo, mat);
+  points.frustumCulled = false;
+  scene.add(points);
+
+  colorAttr = geo.attributes.color;
 }
 
 // ---------------------------------------------------------------
-// Build adjacency maps (no edge mesh rendered globally)
+// Build adjacency
 // ---------------------------------------------------------------
 function buildAdjacency(data) {
   const edges = data.edges;
@@ -200,7 +239,7 @@ function buildAdjacency(data) {
 }
 
 // ---------------------------------------------------------------
-// Show edges only for the selected neuron
+// Show edges for selected neuron only
 // ---------------------------------------------------------------
 function clearEdgeMesh() {
   if (currentEdgeMesh) {
@@ -262,7 +301,6 @@ function showNeuronEdges(idx, maxPerDirection) {
 const infoEl = document.getElementById('info');
 let pointerDownTime = 0, pointerDownX = 0, pointerDownY = 0;
 let highlightedIdx = -1;
-const tmpColor = new THREE.Color();
 const WHITE = new THREE.Color(0xffffff);
 
 renderer.domElement.addEventListener('pointerdown', (e) => {
@@ -310,21 +348,27 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   }
 });
 
+function setPointColor(idx, r, g, b) {
+  colorAttr.array[idx * 3] = r;
+  colorAttr.array[idx * 3 + 1] = g;
+  colorAttr.array[idx * 3 + 2] = b;
+}
+
 function highlightNeuron(idx) {
   if (highlightedIdx !== -1 && highlightedIdx !== idx) {
-    const prev = neurons[highlightedIdx];
-    instancedMesh.setColorAt(highlightedIdx, colorForType(prev.type));
+    const p = baseColors;
+    setPointColor(highlightedIdx, p[highlightedIdx*3], p[highlightedIdx*3+1], p[highlightedIdx*3+2]);
   }
-  instancedMesh.setColorAt(idx, WHITE);
-  instancedMesh.instanceColor.needsUpdate = true;
+  setPointColor(idx, 1, 1, 1);
+  colorAttr.needsUpdate = true;
   highlightedIdx = idx;
 }
 
 function unhighlight() {
   if (highlightedIdx === -1) return;
-  const prev = neurons[highlightedIdx];
-  instancedMesh.setColorAt(highlightedIdx, colorForType(prev.type));
-  instancedMesh.instanceColor.needsUpdate = true;
+  const p = baseColors;
+  setPointColor(highlightedIdx, p[highlightedIdx*3], p[highlightedIdx*3+1], p[highlightedIdx*3+2]);
+  colorAttr.needsUpdate = true;
   highlightedIdx = -1;
 }
 
@@ -359,8 +403,7 @@ function stimulate(startIdx) {
     const prev = layers[layers.length - 1];
     const next = [];
     for (const idx of prev) {
-      const neighbors = adjacency[idx];
-      for (const conn of neighbors) {
+      for (const conn of adjacency[idx]) {
         if (next.length >= PER_HOP) break;
         if (!visited.has(conn.target)) {
           visited.add(conn.target);
@@ -386,12 +429,11 @@ function updateStim(now) {
   if (t >= 1) {
     for (const layer of activeStim.layers) {
       for (const idx of layer) {
-        tmpColor.setRGB(baseColors[idx * 3], baseColors[idx * 3 + 1], baseColors[idx * 3 + 2]);
-        instancedMesh.setColorAt(idx, tmpColor);
+        setPointColor(idx, baseColors[idx*3], baseColors[idx*3+1], baseColors[idx*3+2]);
       }
     }
-    if (highlightedIdx !== -1) instancedMesh.setColorAt(highlightedIdx, WHITE);
-    instancedMesh.instanceColor.needsUpdate = true;
+    if (highlightedIdx !== -1) setPointColor(highlightedIdx, 1, 1, 1);
+    colorAttr.needsUpdate = true;
     activeStim = null;
     return;
   }
@@ -404,12 +446,13 @@ function updateStim(now) {
 
     for (const idx of activeStim.layers[li]) {
       if (idx === highlightedIdx) continue;
-      tmpColor.setRGB(baseColors[idx * 3], baseColors[idx * 3 + 1], baseColors[idx * 3 + 2]);
-      tmpColor.lerp(WHITE, fade * 0.85);
-      instancedMesh.setColorAt(idx, tmpColor);
+      const r = baseColors[idx*3] + (1 - baseColors[idx*3]) * fade * 0.85;
+      const g = baseColors[idx*3+1] + (1 - baseColors[idx*3+1]) * fade * 0.85;
+      const b = baseColors[idx*3+2] + (1 - baseColors[idx*3+2]) * fade * 0.85;
+      setPointColor(idx, r, g, b);
     }
   }
-  instancedMesh.instanceColor.needsUpdate = true;
+  colorAttr.needsUpdate = true;
 }
 
 // ---------------------------------------------------------------
@@ -446,7 +489,10 @@ function animate(now) {
   frameCount++;
   if (now - lastFpsTime > 1000) {
     const fps = Math.round(frameCount * 1000 / (now - lastFpsTime));
-    hudEl.innerHTML = `${fps} FPS<br>${neurons ? neurons.length.toLocaleString('en') : 0} neurons`;
+    const dpr = window.devicePixelRatio;
+    const w = renderer.domElement.width;
+    const h = renderer.domElement.height;
+    hudEl.innerHTML = `${fps} FPS<br>${neurons ? neurons.length.toLocaleString('en') : 0} neurons<br>DPR ${dpr} · ${w}x${h}`;
     frameCount = 0;
     lastFpsTime = now;
   }
