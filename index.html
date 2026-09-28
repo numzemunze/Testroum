@@ -1,43 +1,51 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#0a0a14">
-<title>Testroum — 3D нейроны</title>
+<title>Testroum</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0a14;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #fff; }
   canvas { display: block; touch-action: none; }
-  #hud { position: fixed; top: 14px; left: 14px; font-size: 11px; opacity: 0.5;
-    pointer-events: none; letter-spacing: 0.5px; }
-  #info { position: fixed; bottom: 88px; left: 12px; right: 12px;
-    background: rgba(18, 22, 40, 0.92); backdrop-filter: blur(12px);
+  #hud { position: fixed; top: 14px; left: 14px; font-size: 11px; opacity: 0.55;
+    pointer-events: none; letter-spacing: 0.4px; line-height: 1.6; }
+  #info { position: fixed; bottom: 96px; left: 12px; right: 12px;
+    background: rgba(18, 22, 40, 0.94); backdrop-filter: blur(12px);
     border-radius: 14px; padding: 14px 16px; font-size: 13px;
     display: none; border: 1px solid rgba(76, 201, 240, 0.35);
-    box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5); max-height: 40vh; overflow-y: auto; }
   #info .title { font-weight: 700; margin-bottom: 6px; color: #4cc9f0; font-size: 14px; }
-  #info .row { opacity: 0.85; font-size: 12px; margin-top: 3px; }
+  #info .row { opacity: 0.85; font-size: 12px; margin-top: 4px; line-height: 1.5; }
   #info .row b { color: #ffd166; font-weight: 600; }
+  #info .close { position: absolute; top: 10px; right: 14px; opacity: 0.5; font-size: 20px; cursor: pointer; }
   #controls { position: fixed; bottom: 16px; left: 12px; right: 12px; display: flex; gap: 8px; }
   button { flex: 1; padding: 14px 10px; border-radius: 12px;
     background: rgba(76, 201, 240, 0.12); color: #4cc9f0; font-size: 13px;
     font-weight: 600; border: 1px solid rgba(76, 201, 240, 0.4);
     backdrop-filter: blur(12px); cursor: pointer; transition: background 0.15s; }
   button:active { background: rgba(76, 201, 240, 0.35); transform: scale(0.98); }
-  #loading { position: fixed; inset: 0; display: flex; align-items: center;
-    justify-content: center; background: #0a0a14; z-index: 10;
-    font-size: 13px; opacity: 0.7; transition: opacity 0.4s; }
+  #loading { position: fixed; inset: 0; display: flex; flex-direction: column; gap: 14px;
+    align-items: center; justify-content: center; background: #0a0a14; z-index: 10;
+    font-size: 13px; transition: opacity 0.4s; }
+  #loading .bar { width: 200px; height: 3px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden; }
+  #loading .bar div { height: 100%; width: 0%; background: #4cc9f0; transition: width 0.2s; }
+  #loading .pct { opacity: 0.6; font-variant-numeric: tabular-nums; }
 </style>
 </head>
 <body>
-<div id="loading">Генерация нейронов…</div>
-<div id="hud">—</div>
+<div id="loading">
+  <div>Loading MaleCNS connectome</div>
+  <div class="bar"><div id="loadbar"></div></div>
+  <div class="pct" id="loadpct">0%</div>
+</div>
+<div id="hud">-</div>
 <div id="info"></div>
 <div id="controls">
-  <button id="btn-stim">⚡ Стимулировать</button>
-  <button id="btn-reset">↺ Сброс камеры</button>
+  <button id="btn-stim">Stimulate</button>
+  <button id="btn-reset">Reset camera</button>
 </div>
 
 <script type="importmap">
@@ -53,20 +61,17 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-// ─────────────────────────────────────────────
-// 1. СЦЕНА, КАМЕРА, РЕНДЕРЕР
-// ─────────────────────────────────────────────
+// ---------------------------------------------------------------
+// Scene setup
+// ---------------------------------------------------------------
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0a0a14);
-scene.fog = new THREE.FogExp2(0x0a0a14, 0.0008);
+scene.fog = new THREE.FogExp2(0x0a0a14, 0.0009);
 
 const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 1, 5000);
-camera.position.set(0, 0, 900);
+camera.position.set(0, 0, 1200);
 
-const renderer = new THREE.WebGLRenderer({
-  antialias: false,
-  powerPreference: 'high-performance'
-});
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
 renderer.setSize(innerWidth, innerHeight);
 document.body.appendChild(renderer.domElement);
@@ -76,129 +81,159 @@ controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 controls.rotateSpeed = 0.7;
 controls.zoomSpeed = 0.8;
-controls.minDistance = 100;
-controls.maxDistance = 2000;
+controls.minDistance = 150;
+controls.maxDistance = 3000;
 
-// ─────────────────────────────────────────────
-// 2. ГЕНЕРАЦИЯ НЕЙРОНОВ (синтетика, пока нет MaleCNS)
-// ─────────────────────────────────────────────
-const NEURON_COUNT = 10000;
-
-const TYPE_COLORS = {
-  sensory: new THREE.Color(0xffd166),  // сенсорные — жёлтые
-  central: new THREE.Color(0x4cc9f0),  // центральные — голубые
-  motor:   new THREE.Color(0xef476f),  // моторные — розовые
-  unknown: new THREE.Color(0x8d99ae)   // неизвестные — серые
-};
-const TYPES = ['sensory', 'central', 'motor', 'unknown'];
-const WEIGHTS = [0.15, 0.60, 0.15, 0.10];
-
-function randomType() {
-  const r = Math.random();
-  let acc = 0;
-  for (let i = 0; i < TYPES.length; i++) {
-    acc += WEIGHTS[i];
-    if (r < acc) return TYPES[i];
+// ---------------------------------------------------------------
+// Type to color mapping (hash based, consistent across sessions)
+// ---------------------------------------------------------------
+function hashStringToHue(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = (h * 31 + s.charCodeAt(i)) | 0;
   }
-  return 'unknown';
+  return (Math.abs(h) % 360) / 360;
 }
 
-const neurons = new Array(NEURON_COUNT);
-const positions = new Float32Array(NEURON_COUNT * 3);
-
-for (let i = 0; i < NEURON_COUNT; i++) {
-  // Точка внутри эллипсоида
-  let x, y, z;
-  do {
-    x = Math.random() * 2 - 1;
-    y = Math.random() * 2 - 1;
-    z = Math.random() * 2 - 1;
-  } while (x*x + y*y + z*z > 1);
-
-  // Растягиваем под «мозг»
-  x *= 420; y *= 300; z *= 340;
-
-  // Добавляем кластеризацию — 8 «областей мозга»
-  const cluster = i % 8;
-  const angle = (cluster / 8) * Math.PI * 2;
-  x = x * 0.72 + Math.cos(angle) * 180;
-  y = y * 0.72 + Math.sin(angle) * 120;
-  z = z * 0.85;
-
-  const type = randomType();
-
-  positions[i*3]     = x;
-  positions[i*3 + 1] = y;
-  positions[i*3 + 2] = z;
-  neurons[i] = { x, y, z, type, idx: i };
+const typeColorCache = new Map();
+function colorForType(type) {
+  if (typeColorCache.has(type)) return typeColorCache.get(type);
+  const hue = hashStringToHue(type);
+  const color = new THREE.Color().setHSL(hue, 0.65, 0.6);
+  typeColorCache.set(type, color);
+  return color;
 }
 
-// ─────────────────────────────────────────────
-// 3. РЕНДЕР НЕЙРОНОВ через InstancedMesh
-// ─────────────────────────────────────────────
-const sphereGeo = new THREE.SphereGeometry(3.2, 5, 4); // низкополигональная сфера
-const sphereMat = new THREE.MeshBasicMaterial();
+// ---------------------------------------------------------------
+// State (filled after brain.json loads)
+// ---------------------------------------------------------------
+let neurons = null;
+let instancedMesh = null;
+let edgesLine = null;
+let adjacency = null;
+let baseColors = null;
+let typeCounts = null;
+const NEURON_RADIUS = 2.4;
 
-const instancedMesh = new THREE.InstancedMesh(sphereGeo, sphereMat, NEURON_COUNT);
-instancedMesh.frustumCulled = true;
+// ---------------------------------------------------------------
+// Load brain.json with progress
+// ---------------------------------------------------------------
+const loadbar = document.getElementById('loadbar');
+const loadpct = document.getElementById('loadpct');
+const loadingEl = document.getElementById('loading');
 
-const dummy = new THREE.Object3D();
-const baseColors = new Float32Array(NEURON_COUNT * 3);
+async function loadBrain() {
+  const response = await fetch('brain.json');
+  if (!response.ok) throw new Error('Failed to fetch brain.json: ' + response.status);
 
-for (let i = 0; i < NEURON_COUNT; i++) {
-  const n = neurons[i];
-  dummy.position.set(n.x, n.y, n.z);
-  dummy.updateMatrix();
-  instancedMesh.setMatrixAt(i, dummy.matrix);
+  const total = +response.headers.get('content-length') || 0;
+  const reader = response.body.getReader();
+  const chunks = [];
+  let received = 0;
 
-  const c = TYPE_COLORS[n.type];
-  instancedMesh.setColorAt(i, c);
-  baseColors[i*3]     = c.r;
-  baseColors[i*3 + 1] = c.g;
-  baseColors[i*3 + 2] = c.b;
-}
-instancedMesh.instanceMatrix.needsUpdate = true;
-instancedMesh.instanceColor.needsUpdate = true;
-scene.add(instancedMesh);
-
-// ─────────────────────────────────────────────
-// 4. СВЯЗИ (подвыборка близких пар)
-// ─────────────────────────────────────────────
-const edgePositions = [];
-const MAX_EDGE_FLOATS = 60000; // = 10 000 рёбер
-
-let attempts = 0;
-while (edgePositions.length < MAX_EDGE_FLOATS && attempts < 200000) {
-  attempts++;
-  const i = (Math.random() * NEURON_COUNT) | 0;
-  const j = (Math.random() * NEURON_COUNT) | 0;
-  if (i === j) continue;
-  const a = neurons[i], b = neurons[j];
-  const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
-  const d2 = dx*dx + dy*dy + dz*dz;
-  if (d2 < 90 * 90) {
-    edgePositions.push(a.x, a.y, a.z, b.x, b.y, b.z);
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    received += value.length;
+    if (total) {
+      const pct = Math.round((received / total) * 100);
+      loadbar.style.width = pct + '%';
+      loadpct.textContent = pct + '%';
+    } else {
+      loadpct.textContent = (received / 1024 / 1024).toFixed(1) + ' MB';
+    }
   }
+
+  const blob = new Blob(chunks);
+  const text = await blob.text();
+  return JSON.parse(text);
 }
 
-const edgeGeo = new THREE.BufferGeometry();
-edgeGeo.setAttribute('position',
-  new THREE.Float32BufferAttribute(edgePositions, 3));
-const edgeMat = new THREE.LineBasicMaterial({
-  color: 0x2a4a7a,
-  transparent: true,
-  opacity: 0.35
-});
-const edges = new THREE.LineSegments(edgeGeo, edgeMat);
-scene.add(edges);
+// ---------------------------------------------------------------
+// Build neurons
+// ---------------------------------------------------------------
+function buildNeurons(data) {
+  neurons = data.nodes;
+  const count = neurons.length;
+  baseColors = new Float32Array(count * 3);
+  typeCounts = new Map();
 
-// ─────────────────────────────────────────────
-// 5. ВЗАИМОДЕЙСТВИЕ: тап по нейрону (улучшенный выбор)
-// ─────────────────────────────────────────────
+  const geo = new THREE.SphereGeometry(NEURON_RADIUS, 5, 4);
+  const mat = new THREE.MeshBasicMaterial();
+  instancedMesh = new THREE.InstancedMesh(geo, mat, count);
+  instancedMesh.frustumCulled = false;
+
+  const dummy = new THREE.Object3D();
+
+  for (let i = 0; i < count; i++) {
+    const n = neurons[i];
+    dummy.position.set(n.x, n.y, n.z);
+    dummy.updateMatrix();
+    instancedMesh.setMatrixAt(i, dummy.matrix);
+
+    const color = colorForType(n.type);
+    instancedMesh.setColorAt(i, color);
+    baseColors[i * 3] = color.r;
+    baseColors[i * 3 + 1] = color.g;
+    baseColors[i * 3 + 2] = color.b;
+
+    typeCounts.set(n.type, (typeCounts.get(n.type) || 0) + 1);
+  }
+
+  instancedMesh.instanceMatrix.needsUpdate = true;
+  instancedMesh.instanceColor.needsUpdate = true;
+  scene.add(instancedMesh);
+}
+
+// ---------------------------------------------------------------
+// Build edges and adjacency map
+// ---------------------------------------------------------------
+function buildEdges(data) {
+  const edges = data.edges;
+  const positions = new Float32Array(edges.length * 6);
+  adjacency = new Array(neurons.length);
+  for (let i = 0; i < neurons.length; i++) adjacency[i] = [];
+
+  for (let i = 0; i < edges.length; i++) {
+    const e = edges[i];
+    const a = neurons[e.source];
+    const b = neurons[e.target];
+    const o = i * 6;
+    positions[o] = a.x;
+    positions[o + 1] = a.y;
+    positions[o + 2] = a.z;
+    positions[o + 3] = b.x;
+    positions[o + 4] = b.y;
+    positions[o + 5] = b.z;
+
+    adjacency[e.source].push({ target: e.target, weight: e.weight });
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+  const mat = new THREE.LineBasicMaterial({
+    color: 0x2a4a7a,
+    transparent: true,
+    opacity: 0.18,
+    depthWrite: false
+  });
+
+  edgesLine = new THREE.LineSegments(geo, mat);
+  edgesLine.frustumCulled = false;
+  scene.add(edgesLine);
+}
+
+// ---------------------------------------------------------------
+// Tap detection with pixel radius
+// ---------------------------------------------------------------
 const infoEl = document.getElementById('info');
-
+const raycaster = new THREE.Raycaster();
 let pointerDownTime = 0, pointerDownX = 0, pointerDownY = 0;
 let highlightedIdx = -1;
+const tmpColor = new THREE.Color();
+const WHITE = new THREE.Color(0xffffff);
 
 renderer.domElement.addEventListener('pointerdown', (e) => {
   pointerDownTime = performance.now();
@@ -212,28 +247,22 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   const dy = e.clientY - pointerDownY;
   if (dt > 350 || Math.hypot(dx, dy) > 12) return;
 
-  // Проецируем все нейроны в экранные координаты
   const rect = renderer.domElement.getBoundingClientRect();
   const tapX = e.clientX - rect.left;
   const tapY = e.clientY - rect.top;
-  const TAP_RADIUS_PX = 45; // зона захвата пальца
+  const TAP_RADIUS_PX = 45;
 
   let bestIdx = -1;
   let bestDist = TAP_RADIUS_PX;
-
   const v = new THREE.Vector3();
 
-  for (let i = 0; i < NEURON_COUNT; i++) {
+  for (let i = 0; i < neurons.length; i++) {
     const n = neurons[i];
     v.set(n.x, n.y, n.z).project(camera);
-
-    // Пропускаем нейроны за камерой
     if (v.z > 1) continue;
-
     const sx = (v.x * 0.5 + 0.5) * rect.width;
     const sy = (-v.y * 0.5 + 0.5) * rect.height;
     const dist = Math.hypot(sx - tapX, sy - tapY);
-
     if (dist < bestDist) {
       bestDist = dist;
       bestIdx = i;
@@ -248,161 +277,168 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   }
 });
 
-// Подсветка выбранного нейрона
 function highlightNeuron(idx) {
-  // Сбрасываем предыдущую подсветку
   if (highlightedIdx !== -1 && highlightedIdx !== idx) {
     const prev = neurons[highlightedIdx];
-    const c = TYPE_COLORS[prev.type];
+    const c = colorForType(prev.type);
     instancedMesh.setColorAt(highlightedIdx, c);
   }
-  // Подсвечиваем новый
-  const c = new THREE.Color(0xffffff);
-  instancedMesh.setColorAt(idx, c);
+  instancedMesh.setColorAt(idx, WHITE);
   instancedMesh.instanceColor.needsUpdate = true;
   highlightedIdx = idx;
 }
 
 function showInfo(idx) {
   const n = neurons[idx];
-  const typeRu = {
-    sensory: 'Сенсорный',
-    central: 'Центральный',
-    motor: 'Моторный',
-    unknown: 'Неизвестный'
-  }[n.type];
+  const out = adjacency[idx].length;
+  let inCount = 0;
+  for (let i = 0; i < neurons.length; i++) {
+    for (const conn of adjacency[i]) {
+      if (conn.target === idx) { inCount++; break; }
+    }
+  }
 
   infoEl.innerHTML = `
-    <div class="title">Нейрон #${idx}</div>
-    <div class="row">Тип: <b>${typeRu}</b></div>
-    <div class="row">Координаты: ${n.x.toFixed(0)}, ${n.y.toFixed(0)}, ${n.z.toFixed(0)}</div>
-    <div class="row">Нажми «⚡ Стимулировать» для активации</div>
+    <div class="close" onclick="document.getElementById('info').style.display='none'">x</div>
+    <div class="title">Neuron #${idx}</div>
+    <div class="row">Type: <b>${n.type}</b></div>
+    <div class="row">Outgoing links: <b>${out}</b></div>
+    <div class="row">Incoming links: <b>${inCount}</b></div>
+    <div class="row">Position: ${n.x.toFixed(1)}, ${n.y.toFixed(1)}, ${n.z.toFixed(1)}</div>
   `;
   infoEl.style.display = 'block';
 }
 
-// ─────────────────────────────────────────────
-// 6. СТИМУЛЯЦИЯ: волна активации
-// ─────────────────────────────────────────────
+// ---------------------------------------------------------------
+// Stimulation: BFS wave through real connections
+// ---------------------------------------------------------------
 let activeStim = null;
-const WHITE = new THREE.Color(0xffffff);
-const tmpColor = new THREE.Color();
 
-function stimulate(idx) {
-  const origin = neurons[idx];
-  const neighbors = [];
+function stimulate(startIdx) {
+  const MAX_HOPS = 4;
+  const PER_HOP = 40;
 
-  // Ищем ближайших соседей (brute force, 10k — быстро)
-  for (let i = 0; i < NEURON_COUNT; i++) {
-    if (i === idx) continue;
-    const n = neurons[i];
-    const dx = n.x - origin.x, dy = n.y - origin.y, dz = n.z - origin.z;
-    const d = Math.sqrt(dx*dx + dy*dy + dz*dz);
-    if (d < 120) neighbors.push({ i, d });
+  const visited = new Set([startIdx]);
+  const layers = [[startIdx]];
+
+  for (let hop = 0; hop < MAX_HOPS; hop++) {
+    const prev = layers[layers.length - 1];
+    const next = [];
+    for (const idx of prev) {
+      const neighbors = adjacency[idx].slice().sort((a, b) => b.weight - a.weight);
+      for (const conn of neighbors) {
+        if (next.length >= PER_HOP * (hop + 1)) break;
+        if (!visited.has(conn.target)) {
+          visited.add(conn.target);
+          next.push(conn.target);
+        }
+      }
+      if (next.length >= PER_HOP * (hop + 1)) break;
+    }
+    if (next.length === 0) break;
+    layers.push(next);
   }
-  neighbors.sort((a, b) => a.d - b.d);
-  const selected = neighbors.slice(0, 100);
 
   activeStim = {
-    originIdx: idx,
     startTime: performance.now(),
-    duration: 1300,
-    indices: selected.map(x => x.i),
-    distances: selected.map(x => x.d)
+    duration: 1600,
+    layers: layers
   };
 
-  showInfo(idx);
+  showInfo(startIdx);
+  highlightNeuron(startIdx);
 }
 
 function updateStim(now) {
-  if (!activeStim) return false;
-
+  if (!activeStim) return;
   const t = (now - activeStim.startTime) / activeStim.duration;
 
   if (t >= 1) {
-    // Возвращаем базовые цвета
-    for (let k = 0; k < activeStim.indices.length; k++) {
-      const i = activeStim.indices[k];
-      tmpColor.setRGB(baseColors[i*3], baseColors[i*3+1], baseColors[i*3+2]);
-      instancedMesh.setColorAt(i, tmpColor);
+    for (const layer of activeStim.layers) {
+      for (const idx of layer) {
+        tmpColor.setRGB(baseColors[idx * 3], baseColors[idx * 3 + 1], baseColors[idx * 3 + 2]);
+        instancedMesh.setColorAt(idx, tmpColor);
+      }
     }
     instancedMesh.instanceColor.needsUpdate = true;
     activeStim = null;
-    return false;
+    return;
   }
 
-  const wavefront = t * 120;
-  for (let k = 0; k < activeStim.indices.length; k++) {
-    const i = activeStim.indices[k];
-    const d = activeStim.distances[k];
-    const wave = Math.max(0, 1 - Math.abs(wavefront - d) / 35);
+  const layerCount = activeStim.layers.length;
+  for (let li = 0; li < layerCount; li++) {
+    const layerT = Math.max(0, Math.min(1, (t * layerCount) - li));
+    if (layerT <= 0) continue;
+    const fade = Math.sin(layerT * Math.PI);
 
-    tmpColor.setRGB(baseColors[i*3], baseColors[i*3+1], baseColors[i*3+2]);
-    tmpColor.lerp(WHITE, wave * 0.9);
-    instancedMesh.setColorAt(i, tmpColor);
+    for (const idx of activeStim.layers[li]) {
+      tmpColor.setRGB(baseColors[idx * 3], baseColors[idx * 3 + 1], baseColors[idx * 3 + 2]);
+      tmpColor.lerp(WHITE, fade * 0.85);
+      instancedMesh.setColorAt(idx, tmpColor);
+    }
   }
   instancedMesh.instanceColor.needsUpdate = true;
-  return true;
 }
 
-// ─────────────────────────────────────────────
-// 7. КНОПКИ
-// ─────────────────────────────────────────────
+// ---------------------------------------------------------------
+// Buttons
+// ---------------------------------------------------------------
 document.getElementById('btn-stim').addEventListener('click', () => {
-  const idx = (Math.random() * NEURON_COUNT) | 0;
+  if (!neurons) return;
+  const idx = (Math.random() * neurons.length) | 0;
   stimulate(idx);
 });
 
 document.getElementById('btn-reset').addEventListener('click', () => {
-  camera.position.set(0, 0, 900);
+  camera.position.set(0, 0, 1200);
   controls.target.set(0, 0, 0);
   controls.update();
 });
 
-// ─────────────────────────────────────────────
-// 8. ЦИКЛ РЕНДЕРА
-// ─────────────────────────────────────────────
+// ---------------------------------------------------------------
+// Render loop
+// ---------------------------------------------------------------
 const hudEl = document.getElementById('hud');
 let lastFpsTime = performance.now();
 let frameCount = 0;
 
 function animate(now) {
   requestAnimationFrame(animate);
-
   controls.update();
   updateStim(now);
   renderer.render(scene, camera);
 
-  // FPS-счётчик
   frameCount++;
   if (now - lastFpsTime > 1000) {
     const fps = Math.round(frameCount * 1000 / (now - lastFpsTime));
-    hudEl.textContent = `${fps} FPS · ${NEURON_COUNT.toLocaleString('ru')} нейронов · ${edgePositions.length / 6 | 0} связей`;
+    hudEl.innerHTML = `${fps} FPS<br>${neurons ? neurons.length.toLocaleString('en') : 0} neurons<br>${edgesLine ? (edgesLine.geometry.attributes.position.count / 2).toLocaleString('en') : 0} edges`;
     frameCount = 0;
     lastFpsTime = now;
   }
 }
 
-// ─────────────────────────────────────────────
-// 9. RESIZE
-// ─────────────────────────────────────────────
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
 });
 
-// ─────────────────────────────────────────────
-// 10. СТАРТ
-// ─────────────────────────────────────────────
-requestAnimationFrame(animate);
-
-// Убираем загрузочный экран после первого кадра
-requestAnimationFrame(() => {
-  const loading = document.getElementById('loading');
-  loading.style.opacity = '0';
-  setTimeout(() => loading.remove(), 400);
-});
+// ---------------------------------------------------------------
+// Bootstrap
+// ---------------------------------------------------------------
+(async () => {
+  try {
+    const data = await loadBrain();
+    buildNeurons(data);
+    buildEdges(data);
+    requestAnimationFrame(animate);
+    loadingEl.style.opacity = '0';
+    setTimeout(() => loadingEl.remove(), 400);
+  } catch (err) {
+    loadingEl.innerHTML = '<div style="color:#ef476f;padding:20px;text-align:center;">' + err.message + '</div>';
+    console.error(err);
+  }
+})();
 </script>
 </body>
 </html>
