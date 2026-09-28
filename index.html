@@ -193,14 +193,12 @@ const edges = new THREE.LineSegments(edgeGeo, edgeMat);
 scene.add(edges);
 
 // ─────────────────────────────────────────────
-// 5. ВЗАИМОДЕЙСТВИЕ: тап по нейрону
+// 5. ВЗАИМОДЕЙСТВИЕ: тап по нейрону (улучшенный выбор)
 // ─────────────────────────────────────────────
-const raycaster = new THREE.Raycaster();
-raycaster.params.Points = { threshold: 10 };
-const pointer = new THREE.Vector2();
 const infoEl = document.getElementById('info');
 
 let pointerDownTime = 0, pointerDownX = 0, pointerDownY = 0;
+let highlightedIdx = -1;
 
 renderer.domElement.addEventListener('pointerdown', (e) => {
   pointerDownTime = performance.now();
@@ -212,21 +210,58 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   const dt = performance.now() - pointerDownTime;
   const dx = e.clientX - pointerDownX;
   const dy = e.clientY - pointerDownY;
-  if (dt > 350 || Math.hypot(dx, dy) > 12) return; // это был свайп, не тап
+  if (dt > 350 || Math.hypot(dx, dy) > 12) return;
 
+  // Проецируем все нейроны в экранные координаты
   const rect = renderer.domElement.getBoundingClientRect();
-  pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-  pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  const tapX = e.clientX - rect.left;
+  const tapY = e.clientY - rect.top;
+  const TAP_RADIUS_PX = 45; // зона захвата пальца
 
-  raycaster.setFromCamera(pointer, camera);
-  const hits = raycaster.intersectObject(instancedMesh);
+  let bestIdx = -1;
+  let bestDist = TAP_RADIUS_PX;
 
-  if (hits.length > 0) {
-    showInfo(hits[0].instanceId);
+  const v = new THREE.Vector3();
+
+  for (let i = 0; i < NEURON_COUNT; i++) {
+    const n = neurons[i];
+    v.set(n.x, n.y, n.z).project(camera);
+
+    // Пропускаем нейроны за камерой
+    if (v.z > 1) continue;
+
+    const sx = (v.x * 0.5 + 0.5) * rect.width;
+    const sy = (-v.y * 0.5 + 0.5) * rect.height;
+    const dist = Math.hypot(sx - tapX, sy - tapY);
+
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestIdx = i;
+    }
+  }
+
+  if (bestIdx !== -1) {
+    showInfo(bestIdx);
+    highlightNeuron(bestIdx);
   } else {
     infoEl.style.display = 'none';
   }
 });
+
+// Подсветка выбранного нейрона
+function highlightNeuron(idx) {
+  // Сбрасываем предыдущую подсветку
+  if (highlightedIdx !== -1 && highlightedIdx !== idx) {
+    const prev = neurons[highlightedIdx];
+    const c = TYPE_COLORS[prev.type];
+    instancedMesh.setColorAt(highlightedIdx, c);
+  }
+  // Подсвечиваем новый
+  const c = new THREE.Color(0xffffff);
+  instancedMesh.setColorAt(idx, c);
+  instancedMesh.instanceColor.needsUpdate = true;
+  highlightedIdx = idx;
+}
 
 function showInfo(idx) {
   const n = neurons[idx];
