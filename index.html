@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0a0a14">
+<title>Testroum — 3D нейроны</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0a14;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #fff; }
+  canvas { display: block; touch-action: none; }
+  #hud { position: fixed; top: 14px; left: 14px; font-size: 11px; opacity: 0.5;
+    pointer-events: none; letter-spacing: 0.5px; }
+  #info { position: fixed; bottom: 88px; left: 12px; right: 12px;
+    background: rgba(18, 22, 40, 0.92); backdrop-filter: blur(12px);
+    border-radius: 14px; padding: 14px 16px; font-size: 13px;
+    display: none; border: 1px solid rgba(76, 201, 240, 0.35);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
+  #info .title { font-weight: 700; margin-bottom: 6px; color: #4cc9f0; font-size: 14px; }
+  #info .row { opacity: 0.85; font-size: 12px; margin-top: 3px; }
+  #info .row b { color: #ffd166; font-weight: 600; }
+  #controls { position: fixed; bottom: 16px; left: 12px; right: 12px; display: flex; gap: 8px; }
+  button { flex: 1; padding: 14px 10px; border-radius: 12px;
+    background: rgba(76, 201, 240, 0.12); color: #4cc9f0; font-size: 13px;
+    font-weight: 600; border: 1px solid rgba(76, 201, 240, 0.4);
+    backdrop-filter: blur(12px); cursor: pointer; transition: background 0.15s; }
+  button:active { background: rgba(76, 201, 240, 0.35); transform: scale(0.98); }
+  #loading { position: fixed; inset: 0; display: flex; align-items: center;
+    justify-content: center; background: #0a0a14; z-index: 10;
+    font-size: 13px; opacity: 0.7; transition: opacity 0.4s; }
+</style>
+</head>
+<body>
+<div id="loading">Генерация нейронов…</div>
+<div id="hud">—</div>
+<div id="info"></div>
+<div id="controls">
+  <button id="btn-stim">⚡ Стимулировать</button>
+  <button id="btn-reset">↺ Сброс камеры</button>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ─────────────────────────────────────────────
+// 1. СЦЕНА, КАМЕРА, РЕНДЕРЕР
+// ─────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0a14);
+scene.fog = new THREE.FogExp2(0x0a0a14, 0.0008);
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 1, 5000);
+camera.position.set(0, 0, 900);
+
+const renderer = new THREE.WebGLRenderer({
+  antialias: false,
+  powerPreference: 'high-performance'
+});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.rotateSpeed = 0.7;
+controls.zoomSpeed = 0.8;
+controls.minDistance = 100;
+controls.maxDistance = 2000;
+
+// ─────────────────────────────────────────────
+// 2. ГЕНЕРАЦИЯ НЕЙРОНОВ (синтетика, пока нет MaleCNS)
+// ─────────────────────────────────────────────
+const NEURON_COUNT = 10000;
+
+const TYPE_COLORS = {
+  sensory: new THREE.Color(0xffd166),  // сенсорные — жёлтые
+  central: new THREE.Color(0x4cc9f0),  // центральные — голубые
+  motor:   new THREE.Color(0xef476f),  // моторные — розовые
+  unknown: new THREE.Color(0x8d99ae)   // неизвестные — серые
+};
+const TYPES = ['sensory', 'central', 'motor', 'unknown'];
+const WEIGHTS = [0.15, 0.60, 0.15, 0.10];
+
+function randomType() {
+  const r = Math.random();
+  let acc = 0;
+  for (let i = 0; i < TYPES.length; i++) {
+    acc += WEIGHTS[i];
+    if (r < acc) return TYPES[i];
+  }
+  return 'unknown';
+}
+
+const neurons = new Array(NEURON_COUNT);
+const positions = new Float32Array(NEURON_COUNT * 3);
+
+for (let i = 0; i < NEURON_COUNT; i++) {
+  // Точка внутри эллипсоида
+  let x, y, z;
+  do {
+    x = Math.random() * 2 - 1;
+    y = Math.random() * 2 - 1;
+    z = Math.random() * 2 - 1;
+  } while (x*x + y*y + z*z > 1);
+
+  // Растягиваем под «мозг»
+  x *= 420; y *= 300; z *= 340;
+
+  // Добавляем кластеризацию — 8 «областей мозга»
+  const cluster = i % 8;
+  const angle = (cluster / 8) * Math.PI * 2;
+  x = x * 0.72 + Math.cos(angle) * 180;
+  y = y * 0.72 + Math.sin(angle) * 120;
+  z = z * 0.85;
+
+  const type = randomType();
+
+  positions[i*3]     = x;
+  positions[i*3 + 1] = y;
+  positions[i*3 + 2] = z;
+  neurons[i] = { x, y, z, type, idx: i };
+}
+
+// ─────────────────────────────────────────────
+// 3. РЕНДЕР НЕЙРОНОВ через InstancedMesh
+// ─────────────────────────────────────────────
+const sphereGeo = new THREE.SphereGeometry(3.2, 5, 4); // низкополигональная сфера
+const sphereMat = new THREE.MeshBasicMaterial();
+
+const instancedMesh = new THREE.InstancedMesh(sphereGeo, sphereMat, NEURON_COUNT);
+instancedMesh.frustumCulled = true;
+
+const dummy = new THREE.Object3D();
+const baseColors = new Float32Array(NEURON_COUNT * 3);
+
+for (let i = 0; i < NEURON_COUNT; i++) {
+  const n = neurons[i];
+  dummy.position.set(n.x, n.y, n.z);
+  dummy.updateMatrix();
+  instancedMesh.setMatrixAt(i, dummy.matrix);
+
+  const c = TYPE_COLORS[n.type];
+  instancedMesh.setColorAt(i, c);
+  baseColors[i*3]     = c.r;
+  baseColors[i*3 + 1] = c.g;
+  baseColors[i*3 + 2] = c.b;
+}
+instancedMesh.instanceMatrix.needsUpdate = true;
+instancedMesh.instanceColor.needsUpdate = true;
+scene.add(instancedMesh);
+
+// ─────────────────────────────────────────────
+// 4. СВЯЗИ (подвыборка близких пар)
+// ─────────────────────────────────────────────
+const edgePositions = [];
+const MAX_EDGE_FLOATS = 60000; // = 10 000 рёбер
+
+let attempts = 0;
+while (edgePositions.length < MAX_EDGE_FLOATS && attempts < 200000) {
+  attempts++;
+  const i = (Math.random() * NEURON_COUNT) | 0;
+  const j = (Math.random() * NEURON_COUNT) | 0;
+  if (i === j) continue;
+  const a = neurons[i], b = neurons[j];
+  const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
+  const d2 = dx*dx + dy*dy + dz*dz;
+  if (d2 < 90 * 90) {
+    edgePositions.push(a.x, a.y, a.z, b.x, b.y, b.z);
+  }
+}
+
+const edgeGeo = new THREE.BufferGeometry();
+edgeGeo.setAttribute('position',
+  new THREE.Float32BufferAttribute(edgePositions, 3));
+const edgeMat = new THREE.LineBasicMaterial({
+  color: 0x2a4a7a,
+  transparent: true,
+  opacity: 0.35
+});
+const edges = new THREE.LineSegments(edgeGeo, edgeMat);
+scene.add(edges);
+
+// ─────────────────────────────────────────────
+// 5. ВЗАИМОДЕЙСТВИЕ: тап по нейрону
+// ─────────────────────────────────────────────
+const raycaster = new THREE.Raycaster();
+raycaster.params.Points = { threshold: 10 };
+const pointer = new THREE.Vector2();
+const infoEl = document.getElementById('info');
+
+let pointerDownTime = 0, pointerDownX = 0, pointerDownY = 0;
+
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  pointerDownTime = performance.now();
+  pointerDownX = e.clientX;
+  pointerDownY = e.clientY;
+});
+
+renderer.domElement.addEventListener('pointerup', (e) => {
+  const dt = performance.now() - pointerDownTime;
+  const dx = e.clientX - pointerDownX;
+  const dy = e.clientY - pointerDownY;
+  if (dt > 350 || Math.hypot(dx, dy) > 12) return; // это был свайп, не тап
+
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+  raycaster.setFromCamera(pointer, camera);
+  const hits = raycaster.intersectObject(instancedMesh);
+
+  if (hits.length > 0) {
+    showInfo(hits[0].instanceId);
+  } else {
+    infoEl.style.display = 'none';
+  }
+});
+
+function showInfo(idx) {
+  const n = neurons[idx];
+  const typeRu = {
+    sensory: 'Сенсорный',
+    central: 'Центральный',
+    motor: 'Моторный',
+    unknown: 'Неизвестный'
+  }[n.type];
+
+  infoEl.innerHTML = `
+    <div class="title">Нейрон #${idx}</div>
+    <div class="row">Тип: <b>${typeRu}</b></div>
+    <div class="row">Координаты: ${n.x.toFixed(0)}, ${n.y.toFixed(0)}, ${n.z.toFixed(0)}</div>
+    <div class="row">Нажми «⚡ Стимулировать» для активации</div>
+  `;
+  infoEl.style.display = 'block';
+}
+
+// ─────────────────────────────────────────────
+// 6. СТИМУЛЯЦИЯ: волна активации
+// ─────────────────────────────────────────────
+let activeStim = null;
+const WHITE = new THREE.Color(0xffffff);
+const tmpColor = new THREE.Color();
+
+function stimulate(idx) {
+  const origin = neurons[idx];
+  const neighbors = [];
+
+  // Ищем ближайших соседей (brute force, 10k — быстро)
+  for (let i = 0; i < NEURON_COUNT; i++) {
+    if (i === idx) continue;
+    const n = neurons[i];
+    const dx = n.x - origin.x, dy = n.y - origin.y, dz = n.z - origin.z;
+    const d = Math.sqrt(dx*dx + dy*dy + dz*dz);
+    if (d < 120) neighbors.push({ i, d });
+  }
+  neighbors.sort((a, b) => a.d - b.d);
+  const selected = neighbors.slice(0, 100);
+
+  activeStim = {
+    originIdx: idx,
+    startTime: performance.now(),
+    duration: 1300,
+    indices: selected.map(x => x.i),
+    distances: selected.map(x => x.d)
+  };
+
+  showInfo(idx);
+}
+
+function updateStim(now) {
+  if (!activeStim) return false;
+
+  const t = (now - activeStim.startTime) / activeStim.duration;
+
+  if (t >= 1) {
+    // Возвращаем базовые цвета
+    for (let k = 0; k < activeStim.indices.length; k++) {
+      const i = activeStim.indices[k];
+      tmpColor.setRGB(baseColors[i*3], baseColors[i*3+1], baseColors[i*3+2]);
+      instancedMesh.setColorAt(i, tmpColor);
+    }
+    instancedMesh.instanceColor.needsUpdate = true;
+    activeStim = null;
+    return false;
+  }
+
+  const wavefront = t * 120;
+  for (let k = 0; k < activeStim.indices.length; k++) {
+    const i = activeStim.indices[k];
+    const d = activeStim.distances[k];
+    const wave = Math.max(0, 1 - Math.abs(wavefront - d) / 35);
+
+    tmpColor.setRGB(baseColors[i*3], baseColors[i*3+1], baseColors[i*3+2]);
+    tmpColor.lerp(WHITE, wave * 0.9);
+    instancedMesh.setColorAt(i, tmpColor);
+  }
+  instancedMesh.instanceColor.needsUpdate = true;
+  return true;
+}
+
+// ─────────────────────────────────────────────
+// 7. КНОПКИ
+// ─────────────────────────────────────────────
+document.getElementById('btn-stim').addEventListener('click', () => {
+  const idx = (Math.random() * NEURON_COUNT) | 0;
+  stimulate(idx);
+});
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  camera.position.set(0, 0, 900);
+  controls.target.set(0, 0, 0);
+  controls.update();
+});
+
+// ─────────────────────────────────────────────
+// 8. ЦИКЛ РЕНДЕРА
+// ─────────────────────────────────────────────
+const hudEl = document.getElementById('hud');
+let lastFpsTime = performance.now();
+let frameCount = 0;
+
+function animate(now) {
+  requestAnimationFrame(animate);
+
+  controls.update();
+  updateStim(now);
+  renderer.render(scene, camera);
+
+  // FPS-счётчик
+  frameCount++;
+  if (now - lastFpsTime > 1000) {
+    const fps = Math.round(frameCount * 1000 / (now - lastFpsTime));
+    hudEl.textContent = `${fps} FPS · ${NEURON_COUNT.toLocaleString('ru')} нейронов · ${edgePositions.length / 6 | 0} связей`;
+    frameCount = 0;
+    lastFpsTime = now;
+  }
+}
+
+// ─────────────────────────────────────────────
+// 9. RESIZE
+// ─────────────────────────────────────────────
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ─────────────────────────────────────────────
+// 10. СТАРТ
+// ─────────────────────────────────────────────
+requestAnimationFrame(animate);
+
+// Убираем загрузочный экран после первого кадра
+requestAnimationFrame(() => {
+  const loading = document.getElementById('loading');
+  loading.style.opacity = '0';
+  setTimeout(() => loading.remove(), 400);
+});
+</script>
+</body>
+</html>
