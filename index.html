@@ -39,7 +39,7 @@
 <div id="loading">
   <div>Loading MaleCNS connectome</div>
   <div class="bar"><div id="loadbar"></div></div>
-  <div class="pct" id="loadpct">0%</div>
+  <div class="pct" id="loadpct">0 MB</div>
 </div>
 <div id="hud">-</div>
 <div id="info"></div>
@@ -66,7 +66,6 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 // ---------------------------------------------------------------
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0a0a14);
-scene.fog = new THREE.FogExp2(0x0a0a14, 0.0009);
 
 const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 1, 5000);
 camera.position.set(0, 0, 1200);
@@ -85,13 +84,11 @@ controls.minDistance = 150;
 controls.maxDistance = 3000;
 
 // ---------------------------------------------------------------
-// Type to color mapping (hash based, consistent across sessions)
+// Type to color mapping
 // ---------------------------------------------------------------
 function hashStringToHue(s) {
   let h = 0;
-  for (let i = 0; i < s.length; i++) {
-    h = (h * 31 + s.charCodeAt(i)) | 0;
-  }
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
   return (Math.abs(h) % 360) / 360;
 }
 
@@ -105,18 +102,18 @@ function colorForType(type) {
 }
 
 // ---------------------------------------------------------------
-// State (filled after brain.json loads)
+// State
 // ---------------------------------------------------------------
 let neurons = null;
 let instancedMesh = null;
-let edgesLine = null;
 let adjacency = null;
+let reverseAdjacency = null;
 let baseColors = null;
-let typeCounts = null;
+let currentEdgeMesh = null;
 const NEURON_RADIUS = 2.4;
 
 // ---------------------------------------------------------------
-// Load brain.json with progress
+// Load brain.json
 // ---------------------------------------------------------------
 const loadbar = document.getElementById('loadbar');
 const loadpct = document.getElementById('loadpct');
@@ -126,7 +123,6 @@ async function loadBrain() {
   const response = await fetch('brain.json');
   if (!response.ok) throw new Error('Failed to fetch brain.json: ' + response.status);
 
-  const total = +response.headers.get('content-length') || 0;
   const reader = response.body.getReader();
   const chunks = [];
   let received = 0;
@@ -136,13 +132,9 @@ async function loadBrain() {
     if (done) break;
     chunks.push(value);
     received += value.length;
-    if (total) {
-      const pct = Math.round((received / total) * 100);
-      loadbar.style.width = pct + '%';
-      loadpct.textContent = pct + '%';
-    } else {
-      loadpct.textContent = (received / 1024 / 1024).toFixed(1) + ' MB';
-    }
+    const mb = (received / 1024 / 1024).toFixed(1);
+    loadpct.textContent = mb + ' MB';
+    loadbar.style.width = Math.min(100, received / 250000) + '%';
   }
 
   const blob = new Blob(chunks);
@@ -157,7 +149,6 @@ function buildNeurons(data) {
   neurons = data.nodes;
   const count = neurons.length;
   baseColors = new Float32Array(count * 3);
-  typeCounts = new Map();
 
   const geo = new THREE.SphereGeometry(NEURON_RADIUS, 5, 4);
   const mat = new THREE.MeshBasicMaterial();
@@ -177,8 +168,6 @@ function buildNeurons(data) {
     baseColors[i * 3] = color.r;
     baseColors[i * 3 + 1] = color.g;
     baseColors[i * 3 + 2] = color.b;
-
-    typeCounts.set(n.type, (typeCounts.get(n.type) || 0) + 1);
   }
 
   instancedMesh.instanceMatrix.needsUpdate = true;
@@ -187,49 +176,90 @@ function buildNeurons(data) {
 }
 
 // ---------------------------------------------------------------
-// Build edges and adjacency map
+// Build adjacency maps (no edge mesh rendered globally)
 // ---------------------------------------------------------------
-function buildEdges(data) {
+function buildAdjacency(data) {
   const edges = data.edges;
-  const positions = new Float32Array(edges.length * 6);
   adjacency = new Array(neurons.length);
-  for (let i = 0; i < neurons.length; i++) adjacency[i] = [];
+  reverseAdjacency = new Array(neurons.length);
+  for (let i = 0; i < neurons.length; i++) {
+    adjacency[i] = [];
+    reverseAdjacency[i] = [];
+  }
 
   for (let i = 0; i < edges.length; i++) {
     const e = edges[i];
-    const a = neurons[e.source];
-    const b = neurons[e.target];
-    const o = i * 6;
-    positions[o] = a.x;
-    positions[o + 1] = a.y;
-    positions[o + 2] = a.z;
-    positions[o + 3] = b.x;
-    positions[o + 4] = b.y;
-    positions[o + 5] = b.z;
-
     adjacency[e.source].push({ target: e.target, weight: e.weight });
+    reverseAdjacency[e.target].push({ source: e.source, weight: e.weight });
+  }
+
+  for (let i = 0; i < neurons.length; i++) {
+    adjacency[i].sort((a, b) => b.weight - a.weight);
+    reverseAdjacency[i].sort((a, b) => b.weight - a.weight);
+  }
+}
+
+// ---------------------------------------------------------------
+// Show edges only for the selected neuron
+// ---------------------------------------------------------------
+function clearEdgeMesh() {
+  if (currentEdgeMesh) {
+    scene.remove(currentEdgeMesh);
+    currentEdgeMesh.geometry.dispose();
+    currentEdgeMesh.material.dispose();
+    currentEdgeMesh = null;
+  }
+}
+
+function showNeuronEdges(idx, maxPerDirection) {
+  clearEdgeMesh();
+
+  const outgoing = adjacency[idx].slice(0, maxPerDirection);
+  const incoming = reverseAdjacency[idx].slice(0, maxPerDirection);
+  const total = outgoing.length + incoming.length;
+  if (total === 0) return;
+
+  const positions = new Float32Array(total * 6);
+  const colors = new Float32Array(total * 6);
+  const origin = neurons[idx];
+
+  let o = 0;
+  for (const c of outgoing) {
+    const b = neurons[c.target];
+    positions[o] = origin.x; positions[o + 1] = origin.y; positions[o + 2] = origin.z;
+    positions[o + 3] = b.x; positions[o + 4] = b.y; positions[o + 5] = b.z;
+    colors[o] = 0.30; colors[o + 1] = 0.79; colors[o + 2] = 0.94;
+    colors[o + 3] = 0.30; colors[o + 4] = 0.79; colors[o + 5] = 0.94;
+    o += 6;
+  }
+  for (const c of incoming) {
+    const a = neurons[c.source];
+    positions[o] = a.x; positions[o + 1] = a.y; positions[o + 2] = a.z;
+    positions[o + 3] = origin.x; positions[o + 4] = origin.y; positions[o + 5] = origin.z;
+    colors[o] = 0.94; colors[o + 1] = 0.28; colors[o + 2] = 0.44;
+    colors[o + 3] = 0.94; colors[o + 4] = 0.28; colors[o + 5] = 0.44;
+    o += 6;
   }
 
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
   const mat = new THREE.LineBasicMaterial({
-    color: 0x2a4a7a,
+    vertexColors: true,
     transparent: true,
-    opacity: 0.18,
-    depthWrite: false
+    opacity: 0.8
   });
 
-  edgesLine = new THREE.LineSegments(geo, mat);
-  edgesLine.frustumCulled = false;
-  scene.add(edgesLine);
+  currentEdgeMesh = new THREE.LineSegments(geo, mat);
+  currentEdgeMesh.frustumCulled = false;
+  scene.add(currentEdgeMesh);
 }
 
 // ---------------------------------------------------------------
-// Tap detection with pixel radius
+// Tap detection
 // ---------------------------------------------------------------
 const infoEl = document.getElementById('info');
-const raycaster = new THREE.Raycaster();
 let pointerDownTime = 0, pointerDownX = 0, pointerDownY = 0;
 let highlightedIdx = -1;
 const tmpColor = new THREE.Color();
@@ -272,45 +302,49 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   if (bestIdx !== -1) {
     showInfo(bestIdx);
     highlightNeuron(bestIdx);
+    showNeuronEdges(bestIdx, 60);
   } else {
     infoEl.style.display = 'none';
+    clearEdgeMesh();
+    unhighlight();
   }
 });
 
 function highlightNeuron(idx) {
   if (highlightedIdx !== -1 && highlightedIdx !== idx) {
     const prev = neurons[highlightedIdx];
-    const c = colorForType(prev.type);
-    instancedMesh.setColorAt(highlightedIdx, c);
+    instancedMesh.setColorAt(highlightedIdx, colorForType(prev.type));
   }
   instancedMesh.setColorAt(idx, WHITE);
   instancedMesh.instanceColor.needsUpdate = true;
   highlightedIdx = idx;
 }
 
+function unhighlight() {
+  if (highlightedIdx === -1) return;
+  const prev = neurons[highlightedIdx];
+  instancedMesh.setColorAt(highlightedIdx, colorForType(prev.type));
+  instancedMesh.instanceColor.needsUpdate = true;
+  highlightedIdx = -1;
+}
+
 function showInfo(idx) {
   const n = neurons[idx];
   const out = adjacency[idx].length;
-  let inCount = 0;
-  for (let i = 0; i < neurons.length; i++) {
-    for (const conn of adjacency[i]) {
-      if (conn.target === idx) { inCount++; break; }
-    }
-  }
+  const inc = reverseAdjacency[idx].length;
 
   infoEl.innerHTML = `
     <div class="close" onclick="document.getElementById('info').style.display='none'">x</div>
     <div class="title">Neuron #${idx}</div>
     <div class="row">Type: <b>${n.type}</b></div>
-    <div class="row">Outgoing links: <b>${out}</b></div>
-    <div class="row">Incoming links: <b>${inCount}</b></div>
-    <div class="row">Position: ${n.x.toFixed(1)}, ${n.y.toFixed(1)}, ${n.z.toFixed(1)}</div>
+    <div class="row">Outgoing: <b>${out}</b> (showing 60)</div>
+    <div class="row">Incoming: <b>${inc}</b> (showing 60)</div>
   `;
   infoEl.style.display = 'block';
 }
 
 // ---------------------------------------------------------------
-// Stimulation: BFS wave through real connections
+// Stimulation
 // ---------------------------------------------------------------
 let activeStim = null;
 
@@ -325,28 +359,24 @@ function stimulate(startIdx) {
     const prev = layers[layers.length - 1];
     const next = [];
     for (const idx of prev) {
-      const neighbors = adjacency[idx].slice().sort((a, b) => b.weight - a.weight);
+      const neighbors = adjacency[idx];
       for (const conn of neighbors) {
-        if (next.length >= PER_HOP * (hop + 1)) break;
+        if (next.length >= PER_HOP) break;
         if (!visited.has(conn.target)) {
           visited.add(conn.target);
           next.push(conn.target);
         }
       }
-      if (next.length >= PER_HOP * (hop + 1)) break;
+      if (next.length >= PER_HOP) break;
     }
     if (next.length === 0) break;
     layers.push(next);
   }
 
-  activeStim = {
-    startTime: performance.now(),
-    duration: 1600,
-    layers: layers
-  };
-
+  activeStim = { startTime: performance.now(), duration: 1600, layers };
   showInfo(startIdx);
   highlightNeuron(startIdx);
+  showNeuronEdges(startIdx, 60);
 }
 
 function updateStim(now) {
@@ -360,6 +390,7 @@ function updateStim(now) {
         instancedMesh.setColorAt(idx, tmpColor);
       }
     }
+    if (highlightedIdx !== -1) instancedMesh.setColorAt(highlightedIdx, WHITE);
     instancedMesh.instanceColor.needsUpdate = true;
     activeStim = null;
     return;
@@ -372,6 +403,7 @@ function updateStim(now) {
     const fade = Math.sin(layerT * Math.PI);
 
     for (const idx of activeStim.layers[li]) {
+      if (idx === highlightedIdx) continue;
       tmpColor.setRGB(baseColors[idx * 3], baseColors[idx * 3 + 1], baseColors[idx * 3 + 2]);
       tmpColor.lerp(WHITE, fade * 0.85);
       instancedMesh.setColorAt(idx, tmpColor);
@@ -393,6 +425,9 @@ document.getElementById('btn-reset').addEventListener('click', () => {
   camera.position.set(0, 0, 1200);
   controls.target.set(0, 0, 0);
   controls.update();
+  clearEdgeMesh();
+  unhighlight();
+  infoEl.style.display = 'none';
 });
 
 // ---------------------------------------------------------------
@@ -411,7 +446,7 @@ function animate(now) {
   frameCount++;
   if (now - lastFpsTime > 1000) {
     const fps = Math.round(frameCount * 1000 / (now - lastFpsTime));
-    hudEl.innerHTML = `${fps} FPS<br>${neurons ? neurons.length.toLocaleString('en') : 0} neurons<br>${edgesLine ? (edgesLine.geometry.attributes.position.count / 2).toLocaleString('en') : 0} edges`;
+    hudEl.innerHTML = `${fps} FPS<br>${neurons ? neurons.length.toLocaleString('en') : 0} neurons`;
     frameCount = 0;
     lastFpsTime = now;
   }
@@ -430,7 +465,7 @@ addEventListener('resize', () => {
   try {
     const data = await loadBrain();
     buildNeurons(data);
-    buildEdges(data);
+    buildAdjacency(data);
     requestAnimationFrame(animate);
     loadingEl.style.opacity = '0';
     setTimeout(() => loadingEl.remove(), 400);
