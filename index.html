@@ -141,6 +141,24 @@ let currentEdgeMesh = null;
 let highlightedIdx = -1;
 let activeStim = null;
 
+// LIF simulation state
+let v = null;
+let threshold = null;
+let decay = null;
+let outWeight = null;
+let refractory = null;
+let spiked = null;
+let adjStart = null;
+let adjTarget = null;
+let adjWeight = null;
+
+const SIM_STEP_MS = 33;
+const REFRACTORY_STEPS = 5;
+const WEIGHT_SCALE = 0.15;
+const SPONTANEOUS_PER_STEP = 3;
+let simAccum = 0;
+let lastSimTime = 0;
+
 // ---------------------------------------------------------------
 // Load brain.json
 // ---------------------------------------------------------------
@@ -218,13 +236,16 @@ function buildNeurons(data) {
 }
 
 // ---------------------------------------------------------------
-// Adjacency
+// Adjacency + flat arrays for simulation
 // ---------------------------------------------------------------
 function buildAdjacency(data) {
   const edges = data.edges;
-  adjacency = new Array(neurons.length);
-  reverseAdjacency = new Array(neurons.length);
-  for (let i = 0; i < neurons.length; i++) {
+  const n = neurons.length;
+
+  adjacency = new Array(n);
+  reverseAdjacency = new Array(n);
+  const outCount = new Int32Array(n);
+  for (let i = 0; i < n; i++) {
     adjacency[i] = [];
     reverseAdjacency[i] = [];
   }
@@ -233,12 +254,120 @@ function buildAdjacency(data) {
     const e = edges[i];
     adjacency[e.source].push({ target: e.target, weight: e.weight });
     reverseAdjacency[e.target].push({ source: e.source, weight: e.weight });
+    outCount[e.source]++;
   }
 
-  for (let i = 0; i < neurons.length; i++) {
+  for (let i = 0; i < n; i++) {
     adjacency[i].sort((a, b) => b.weight - a.weight);
     reverseAdjacency[i].sort((a, b) => b.weight - a.weight);
   }
+
+  // Flat arrays for fast simulation
+  adjStart = new Int32Array(n + 1);
+  let total = 0;
+  for (let i = 0; i < n; i++) {
+    adjStart[i] = total;
+    total += outCount[i];
+  }
+  adjStart[n] = total;
+
+  adjTarget = new Int32Array(total);
+  adjWeight = new Float32Array(total);
+
+  const cursor = new Int32Array(n);
+  for (let i = 0; i < edges.length; i++) {
+    const e = edges[i];
+    const pos = adjStart[e.source] + cursor[e.source];
+    adjTarget[pos] = e.target;
+    // Normalize weight to a stable range [0, 0.5)
+    adjWeight[pos] = (e.weight / (1 + e.weight)) * WEIGHT_SCALE;
+    cursor[e.source]++;
+  }
+}
+
+// Initialize simulation arrays
+function initSimulation() {
+  const n = neurons.length;
+  v = new Float32Array(n);
+  threshold = new Float32Array(n).fill(1.0);
+  decay = new Float32Array(n).fill(0.90);
+  outWeight = new Float32Array(n).fill(1.0);
+  refractory = new Int32Array(n);
+  spiked = new Uint8Array(n);
+}
+
+// One simulation step
+function simulateStep() {
+  const n = neurons.length;
+
+  // Decay potentials
+  for (let i = 0; i < n; i++) {
+    if (refractory[i] > 0) {
+      refractory[i]--;
+      v[i] = 0;
+      continue;
+    }
+    v[i] *= decay[i];
+  }
+
+  // Propagate from neurons that spiked on previous step
+  for (let i = 0; i < n; i++) {
+    if (!spiked[i]) continue;
+    const start = adjStart[i];
+    const end = adjStart[i + 1];
+    const w = outWeight[i];
+    for (let k = start; k < end; k++) {
+      v[adjTarget[k]] += adjWeight[k] * w;
+    }
+  }
+
+  // Clear spike flags (they were consumed)
+  spiked.fill(0);
+
+  // Spontaneous activity
+  for (let s = 0; s < SPONTANEOUS_PER_STEP; s++) {
+    const idx = (Math.random() * n) | 0;
+    v[idx] += 2.5;
+  }
+
+  // Check for new spikes
+  for (let i = 0; i < n; i++) {
+    if (refractory[i] > 0) continue;
+    if (v[i] >= threshold[i]) {
+      spiked[i] = 1;
+      refractory[i] = REFRACTORY_STEPS;
+      v[i] = 0;
+    } else if (v[i] > threshold[i] * 2) {
+      v[i] = threshold[i] * 2;
+    }
+  }
+}
+
+// Update point colors based on activity
+const HOT_COLOR = new THREE.Color(0xffffff);
+function updateActivityColors() {
+  const n = neurons.length;
+  const arr = colorAttr.array;
+  for (let i = 0; i < n; i++) {
+    let intensity;
+    if (spiked[i]) {
+      intensity = 1.0;
+    } else {
+      intensity = v[i] / threshold[i];
+      if (intensity > 1) intensity = 1;
+    }
+    const base = baseColors;
+    const k = i * 3;
+    arr[k]     = base[k]     + (1 - base[k])     * intensity * 0.9;
+    arr[k + 1] = base[k + 1] + (1 - base[k + 1]) * intensity * 0.9;
+    arr[k + 2] = base[k + 2] + (1 - base[k + 2]) * intensity * 0.9;
+  }
+  // Keep highlighted neuron white
+  if (highlightedIdx !== -1) {
+    const k = highlightedIdx * 3;
+    arr[k] = 1; arr[k + 1] = 1; arr[k + 2] = 1;
+  }
+  colorAttr.needsUpdate = true;
 }
 
 // ---------------------------------------------------------------
@@ -323,14 +452,14 @@ renderer.domElement.addEventListener('pointerup', (e) => {
 
   let bestIdx = -1;
   let bestDist = TAP_RADIUS_PX;
-  const v = new THREE.Vector3();
+  const v3 = new THREE.Vector3();
 
   for (let i = 0; i < neurons.length; i++) {
     const n = neurons[i];
-    v.set(n.x, n.y, n.z).project(camera);
-    if (v.z > 1) continue;
-    const sx = (v.x * 0.5 + 0.5) * rect.width;
-    const sy = (-v.y * 0.5 + 0.5) * rect.height;
+    v3.set(n.x, n.y, n.z).project(camera);
+    if (v3.z > 1) continue;
+    const sx = (v3.x * 0.5 + 0.5) * rect.width;
+    const sy = (-v3.y * 0.5 + 0.5) * rect.height;
     const dist = Math.hypot(sx - tapX, sy - tapY);
     if (dist < bestDist) {
       bestDist = dist;
@@ -517,6 +646,8 @@ document.getElementById('btn-reset').addEventListener('click', () => {
   camera.position.set(0, 0, 1200);
   controls.target.set(0, 0, 0);
   controls.update();
+  if (v) v.fill(0);
+  if (refractory) refractory.fill(0);
   clearEdgeMesh();
   clearStim();
   unhighlight();
@@ -532,6 +663,23 @@ let frameCount = 0;
 
 function animate(now) {
   requestAnimationFrame(animate);
+
+  // Simulation runs at fixed 30 Hz
+  if (lastSimTime === 0) lastSimTime = now;
+  simAccum += now - lastSimTime;
+  lastSimTime = now;
+
+  let simulated = false;
+  while (simAccum >= SIM_STEP_MS) {
+    simulateStep();
+    simAccum -= SIM_STEP_MS;
+    simulated = true;
+  }
+
+  if (simulated) {
+    updateActivityColors();
+  }
+
   controls.update();
   updateStim(now);
   renderer.render(scene, camera);
@@ -561,6 +709,7 @@ addEventListener('resize', () => {
     const data = await loadBrain();
     buildNeurons(data);
     buildAdjacency(data);
+    initSimulation();
     requestAnimationFrame(animate);
     loadingEl.style.opacity = '0';
     setTimeout(() => loadingEl.remove(), 400);
