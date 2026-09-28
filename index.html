@@ -62,7 +62,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 // ---------------------------------------------------------------
-// Scene setup with reduced pixel ratio
+// Scene setup
 // ---------------------------------------------------------------
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0a0a14);
@@ -75,7 +75,6 @@ const renderer = new THREE.WebGLRenderer({
   powerPreference: 'high-performance',
   precision: 'mediump'
 });
-// Critical fix: cap at 1.0, not 1.5
 renderer.setPixelRatio(1.0);
 renderer.setSize(innerWidth, innerHeight);
 document.body.appendChild(renderer.domElement);
@@ -89,7 +88,7 @@ controls.minDistance = 150;
 controls.maxDistance = 3000;
 
 // ---------------------------------------------------------------
-// Round point texture generated at runtime
+// Circle texture shared by main points and glow
 // ---------------------------------------------------------------
 function makeCircleTexture() {
   const size = 64;
@@ -99,7 +98,7 @@ function makeCircleTexture() {
   const ctx = canvas.getContext('2d');
   const gradient = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
   gradient.addColorStop(0, 'rgba(255,255,255,1)');
-  gradient.addColorStop(0.6, 'rgba(255,255,255,1)');
+  gradient.addColorStop(0.55, 'rgba(255,255,255,0.9)');
   gradient.addColorStop(1, 'rgba(255,255,255,0)');
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, size, size);
@@ -109,8 +108,10 @@ function makeCircleTexture() {
   return tex;
 }
 
+const circleTexture = makeCircleTexture();
+
 // ---------------------------------------------------------------
-// Type to color mapping
+// Type colors
 // ---------------------------------------------------------------
 function hashStringToHue(s) {
   let h = 0;
@@ -137,6 +138,8 @@ let adjacency = null;
 let reverseAdjacency = null;
 let baseColors = null;
 let currentEdgeMesh = null;
+let highlightedIdx = -1;
+let activeStim = null;
 
 // ---------------------------------------------------------------
 // Load brain.json
@@ -168,7 +171,7 @@ async function loadBrain() {
 }
 
 // ---------------------------------------------------------------
-// Build neurons as Points (huge performance boost)
+// Build neurons
 // ---------------------------------------------------------------
 function buildNeurons(data) {
   neurons = data.nodes;
@@ -201,7 +204,7 @@ function buildNeurons(data) {
     size: 7,
     sizeAttenuation: true,
     vertexColors: true,
-    map: makeCircleTexture(),
+    map: circleTexture,
     transparent: true,
     alphaTest: 0.1,
     depthWrite: false
@@ -215,7 +218,7 @@ function buildNeurons(data) {
 }
 
 // ---------------------------------------------------------------
-// Build adjacency
+// Adjacency
 // ---------------------------------------------------------------
 function buildAdjacency(data) {
   const edges = data.edges;
@@ -239,7 +242,7 @@ function buildAdjacency(data) {
 }
 
 // ---------------------------------------------------------------
-// Show edges for selected neuron only
+// Selected neuron edges
 // ---------------------------------------------------------------
 function clearEdgeMesh() {
   if (currentEdgeMesh) {
@@ -300,8 +303,6 @@ function showNeuronEdges(idx, maxPerDirection) {
 // ---------------------------------------------------------------
 const infoEl = document.getElementById('info');
 let pointerDownTime = 0, pointerDownX = 0, pointerDownY = 0;
-let highlightedIdx = -1;
-const WHITE = new THREE.Color(0xffffff);
 
 renderer.domElement.addEventListener('pointerdown', (e) => {
   pointerDownTime = performance.now();
@@ -388,11 +389,19 @@ function showInfo(idx) {
 }
 
 // ---------------------------------------------------------------
-// Stimulation
+// Stimulation with dedicated glow layers
 // ---------------------------------------------------------------
-let activeStim = null;
+function clearStim() {
+  if (!activeStim) return;
+  for (const layer of activeStim.layerMeshes) {
+    scene.remove(layer.points);
+    layer.points.geometry.dispose();
+    layer.points.material.dispose();
+  }
+  activeStim = null;
+}
 
-function stimulate(startIdx) {
+function buildStimLayers(startIdx) {
   const MAX_HOPS = 4;
   const PER_HOP = 40;
 
@@ -415,11 +424,50 @@ function stimulate(startIdx) {
     if (next.length === 0) break;
     layers.push(next);
   }
+  return layers;
+}
 
-  activeStim = { startTime: performance.now(), duration: 1600, layers };
-  showInfo(startIdx);
-  highlightNeuron(startIdx);
-  showNeuronEdges(startIdx, 60);
+function stimulate(startIdx) {
+  clearStim();
+
+  const layers = buildStimLayers(startIdx);
+
+  const layerMeshes = [];
+  for (let li = 0; li < layers.length; li++) {
+    const positions = new Float32Array(layers[li].length * 3);
+    for (let i = 0; i < layers[li].length; i++) {
+      const n = neurons[layers[li][i]];
+      positions[i*3] = n.x;
+      positions[i*3+1] = n.y;
+      positions[i*3+2] = n.z;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+    const mat = new THREE.PointsMaterial({
+      size: 20,
+      map: circleTexture,
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0,
+      sizeAttenuation: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    });
+
+    const pts = new THREE.Points(geo, mat);
+    pts.frustumCulled = false;
+    scene.add(pts);
+
+    layerMeshes.push({ points: pts, layerIndex: li });
+  }
+
+  activeStim = {
+    startTime: performance.now(),
+    duration: 1800,
+    layerCount: layers.length,
+    layerMeshes: layerMeshes
+  };
 }
 
 function updateStim(now) {
@@ -427,32 +475,25 @@ function updateStim(now) {
   const t = (now - activeStim.startTime) / activeStim.duration;
 
   if (t >= 1) {
-    for (const layer of activeStim.layers) {
-      for (const idx of layer) {
-        setPointColor(idx, baseColors[idx*3], baseColors[idx*3+1], baseColors[idx*3+2]);
-      }
-    }
-    if (highlightedIdx !== -1) setPointColor(highlightedIdx, 1, 1, 1);
-    colorAttr.needsUpdate = true;
-    activeStim = null;
+    clearStim();
     return;
   }
 
-  const layerCount = activeStim.layers.length;
-  for (let li = 0; li < layerCount; li++) {
-    const layerT = Math.max(0, Math.min(1, (t * layerCount) - li));
-    if (layerT <= 0) continue;
-    const fade = Math.sin(layerT * Math.PI);
+  const L = activeStim.layerCount;
+  for (const lm of activeStim.layerMeshes) {
+    const layerStart = lm.layerIndex / L;
+    const layerSpan = 2 / L;
+    const lt = (t - layerStart) / layerSpan;
 
-    for (const idx of activeStim.layers[li]) {
-      if (idx === highlightedIdx) continue;
-      const r = baseColors[idx*3] + (1 - baseColors[idx*3]) * fade * 0.85;
-      const g = baseColors[idx*3+1] + (1 - baseColors[idx*3+1]) * fade * 0.85;
-      const b = baseColors[idx*3+2] + (1 - baseColors[idx*3+2]) * fade * 0.85;
-      setPointColor(idx, r, g, b);
+    if (lt < 0 || lt > 1) {
+      lm.points.material.opacity = 0;
+      continue;
     }
+
+    const pulse = Math.sin(lt * Math.PI);
+    lm.points.material.opacity = pulse;
+    lm.points.material.size = 18 + pulse * 35;
   }
-  colorAttr.needsUpdate = true;
 }
 
 // ---------------------------------------------------------------
@@ -460,8 +501,16 @@ function updateStim(now) {
 // ---------------------------------------------------------------
 document.getElementById('btn-stim').addEventListener('click', () => {
   if (!neurons) return;
-  const idx = (Math.random() * neurons.length) | 0;
-  stimulate(idx);
+
+  let target = highlightedIdx;
+  if (target === -1) {
+    target = (Math.random() * neurons.length) | 0;
+    highlightNeuron(target);
+  }
+
+  showInfo(target);
+  showNeuronEdges(target, 60);
+  stimulate(target);
 });
 
 document.getElementById('btn-reset').addEventListener('click', () => {
@@ -469,6 +518,7 @@ document.getElementById('btn-reset').addEventListener('click', () => {
   controls.target.set(0, 0, 0);
   controls.update();
   clearEdgeMesh();
+  clearStim();
   unhighlight();
   infoEl.style.display = 'none';
 });
@@ -489,10 +539,9 @@ function animate(now) {
   frameCount++;
   if (now - lastFpsTime > 1000) {
     const fps = Math.round(frameCount * 1000 / (now - lastFpsTime));
-    const dpr = window.devicePixelRatio;
     const w = renderer.domElement.width;
     const h = renderer.domElement.height;
-    hudEl.innerHTML = `${fps} FPS<br>${neurons ? neurons.length.toLocaleString('en') : 0} neurons<br>DPR ${dpr} · ${w}x${h}`;
+    hudEl.innerHTML = `${fps} FPS<br>${neurons ? neurons.length.toLocaleString('en') : 0} neurons<br>${w}x${h}`;
     frameCount = 0;
     lastFpsTime = now;
   }
