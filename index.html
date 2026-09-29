@@ -74,7 +74,6 @@
     transform: scale(0.94);
   }
 
-  /* -------- Group bar (horizontal pill scroller) -------- */
   #group-bar {
     position: fixed;
     top: 78px;
@@ -592,6 +591,9 @@
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 
 // ---------------------------------------------------------------
 // Scene setup
@@ -610,6 +612,22 @@ const renderer = new THREE.WebGLRenderer({
 renderer.setPixelRatio(1.0);
 renderer.setSize(innerWidth, innerHeight);
 document.body.appendChild(renderer.domElement);
+
+// Post-processing with bloom
+const composer = new EffectComposer(renderer);
+composer.setPixelRatio(1.0);
+composer.setSize(innerWidth, innerHeight);
+
+const renderPass = new RenderPass(scene, camera);
+composer.addPass(renderPass);
+
+const bloomPass = new UnrealBloomPass(
+  new THREE.Vector2(innerWidth, innerHeight),
+  0.85,   // strength
+  0.5,    // radius
+  0.15    // threshold
+);
+composer.addPass(bloomPass);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
@@ -693,8 +711,8 @@ const BUFFER_SIZE = 6;
 
 const SIM_STEP_MS = 33;
 const REFRACTORY_STEPS = 5;
-const WEIGHT_SCALE = 0.30;
-const SPONTANEOUS_PER_STEP = 2;
+const WEIGHT_SCALE = 1.2;
+const SPONTANEOUS_PER_STEP = 6;
 let simAccum = 0;
 let lastSimTime = 0;
 
@@ -836,10 +854,10 @@ function buildAdjacency(data) {
 // ---------------------------------------------------------------
 // Group by type prefix
 // ---------------------------------------------------------------
-let groupMap = null;      // prefix -> [neuron indices]
-let groupNames = null;    // sorted array of prefixes
+let groupMap = null;
+let groupNames = null;
 let selectedGroup = null;
-let groupSet = null;      // fast lookup Set for current selection
+let groupSet = null;
 const groupBar = document.getElementById('group-bar');
 const groupPanel = document.getElementById('group-panel');
 
@@ -847,16 +865,13 @@ function buildGroups() {
   groupMap = new Map();
   for (let i = 0; i < neurons.length; i++) {
     const type = neurons[i].type || 'unknown';
-    // Take prefix up to first digit (max 4 chars)
     const match = type.match(/^[A-Za-z]+/);
     const prefix = match ? match[0].slice(0, 4) : 'OTHER';
     if (!groupMap.has(prefix)) groupMap.set(prefix, []);
     groupMap.get(prefix).push(i);
   }
-  // Sort by count descending
   groupNames = Array.from(groupMap.keys()).sort((a, b) => groupMap.get(b).length - groupMap.get(a).length);
 
-  // Build pills
   groupBar.innerHTML = '';
   for (const name of groupNames) {
     const count = groupMap.get(name).length;
@@ -870,7 +885,6 @@ function buildGroups() {
 }
 
 function selectGroup(name) {
-  // Toggle off if same group tapped again
   if (selectedGroup === name) {
     clearGroupSelection();
     return;
@@ -878,18 +892,13 @@ function selectGroup(name) {
   selectedGroup = name;
   groupSet = new Set(groupMap.get(name));
 
-  // Hide individual neuron panel if it was open
   infoEl.style.display = 'none';
 
-  // Highlight pills
   document.querySelectorAll('.group-pill').forEach((p) => {
     p.classList.toggle('active', p.dataset.group === name);
   });
 
-  // Immediate visual update (updateActivityColors will keep it in sync each frame)
   updateActivityColors();
-
-  // Open group panel
   showGroupPanel(name);
 }
 
@@ -899,7 +908,6 @@ function clearGroupSelection() {
   document.querySelectorAll('.group-pill').forEach((p) => p.classList.remove('active'));
   groupPanel.style.display = 'none';
 
-  // Restore base colors
   const arr = colorAttr.array;
   for (let i = 0; i < neurons.length; i++) {
     arr[i * 3]     = baseColors[i * 3];
@@ -1080,7 +1088,6 @@ function updateActivityColors() {
   const arr = colorAttr.array;
 
   if (selectedGroup !== null && groupSet !== null) {
-    // Group mode: dim non-members, brighten members with activity
     for (let i = 0; i < n; i++) {
       const k = i * 3;
       if (groupSet.has(i)) {
@@ -1090,7 +1097,6 @@ function updateActivityColors() {
           intensity = v[i] / threshold[i];
           if (intensity > 1) intensity = 1;
         }
-        // Base group tint 0.95,0.95,1.0 blended toward pure white by intensity
         arr[k]     = 0.95 + 0.05 * intensity;
         arr[k + 1] = 0.95 + 0.05 * intensity;
         arr[k + 2] = 1.0;
@@ -1101,7 +1107,6 @@ function updateActivityColors() {
       }
     }
   } else {
-    // Normal mode
     for (let i = 0; i < n; i++) {
       let intensity;
       if (spiked[i]) {
@@ -1118,7 +1123,6 @@ function updateActivityColors() {
     }
   }
 
-  // Keep highlighted neuron white
   if (highlightedIdx !== -1) {
     const k = highlightedIdx * 3;
     arr[k] = 1; arr[k + 1] = 1; arr[k + 2] = 1;
@@ -1191,7 +1195,6 @@ const pullTab = document.getElementById('panel-pull');
 let lastSelectedIdx = -1;
 let pointerDownTime = 0, pointerDownX = 0, pointerDownY = 0;
 
-// Panel drag state
 let panelDrag = null;
 
 infoEl.addEventListener('pointerdown', (e) => {
@@ -1276,7 +1279,6 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   }
 
   if (bestIdx !== -1) {
-    // Clear group selection if active (both panels overlap)
     if (selectedGroup !== null) clearGroupSelection();
     lastSelectedIdx = bestIdx;
     showInfo(bestIdx);
@@ -1487,7 +1489,6 @@ document.getElementById('btn-stim').addEventListener('click', () => {
   }
   lastSelectedIdx = target;
 
-  // Collapse panel so it doesn't block the view during stimulation
   infoEl.style.transition = 'transform 0.25s cubic-bezier(0.22, 1, 0.36, 1)';
   infoEl.style.transform = 'translateY(120%)';
   setTimeout(() => {
@@ -1515,9 +1516,8 @@ document.getElementById('hud-reset').addEventListener('click', () => {
   outWeight.fill(1.0);
 
   globalFatigue = 0;
-  settleSteps = 30;  // 1 second of silence before spontaneous resumes
+  settleSteps = 30;
 
-  // Clear group selection if active
   if (selectedGroup !== null) clearGroupSelection();
 
   clearEdgeMesh();
@@ -1546,7 +1546,6 @@ let frameCount = 0;
 function animate(now) {
   requestAnimationFrame(animate);
 
-  // Simulation runs at fixed 30 Hz
   if (lastSimTime === 0) lastSimTime = now;
   simAccum += now - lastSimTime;
   lastSimTime = now;
@@ -1564,13 +1563,12 @@ function animate(now) {
 
   controls.update();
   updateStim(now);
-  renderer.render(scene, camera);
+  composer.render();
 
   frameCount++;
   if (now - lastFpsTime > 1000) {
     const fps = Math.round(frameCount * 1000 / (now - lastFpsTime));
 
-    // Count active neurons (potential > 0.1)
     let activeCount = 0;
     let spikingCount = 0;
     for (let i = 0; i < v.length; i++) {
@@ -1592,6 +1590,7 @@ addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
 });
 
 // ---------------------------------------------------------------
