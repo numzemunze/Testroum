@@ -674,80 +674,69 @@ function makeCircleTexture() {
 const circleTexture = makeCircleTexture();
 
 // ---------------------------------------------------------------
-// Load fly head model (glTF from GitHub Releases) — ghost shell
+// Load fly head model (glTF from GitHub Releases) — ghost shell v2
 // ---------------------------------------------------------------
 function loadFlyModel() {
   const loader = new GLTFLoader();
   const url = 'https://github.com/numzemunze/Testroum/releases/download/V1/head.glb';
 
   loader.load(url, (gltf) => {
+    console.log('[fly] gltf loaded');
     const model = gltf.scene;
 
-    // Compute bounding box for auto-scale and centering
+    // Compute bounding box
     const box = new THREE.Box3().setFromObject(model);
     const size = new THREE.Vector3();
     const center = new THREE.Vector3();
     box.getSize(size);
     box.getCenter(center);
 
+    console.log('[fly] raw size', size.x.toFixed(1), size.y.toFixed(1), size.z.toFixed(1));
+    console.log('[fly] raw center', center.x.toFixed(1), center.y.toFixed(1), center.z.toFixed(1));
+
     const targetSize = 1100;
     const maxDim = Math.max(size.x, size.y, size.z);
     flyScale = targetSize / maxDim;
+    console.log('[fly] scale', flyScale);
 
-    // Create a wrapping group to handle transform cleanly
     const wrapper = new THREE.Group();
     model.position.sub(center);
     wrapper.add(model);
     wrapper.scale.setScalar(flyScale);
-    wrapper.position.set(0, 0, 0);
 
-    // Apply ghost material to all meshes
+    // Count meshes and assign ghost material
+    let meshCount = 0;
     model.traverse((node) => {
       if (node.isMesh) {
-        // Dispose old material
+        meshCount++;
         if (node.material) {
           if (Array.isArray(node.material)) node.material.forEach((m) => m.dispose());
           else node.material.dispose();
         }
-
         node.material = new THREE.MeshBasicMaterial({
-          color: 0x5fb8e6,
+          color: 0x7ac8f0,
           transparent: true,
-          opacity: 0.08,
+          opacity: 0.35,
           side: THREE.FrontSide,
           depthWrite: false,
           blending: THREE.AdditiveBlending
         });
       }
     });
+    console.log('[fly] meshes:', meshCount);
 
     flyModel = wrapper;
     scene.add(wrapper);
-
-    // Second pass: inner glow (backfaces) for extra shell depth
-    const backPass = model.clone();
-    backPass.traverse((node) => {
-      if (node.isMesh) {
-        node.material = new THREE.MeshBasicMaterial({
-          color: 0x3a8fc9,
-          transparent: true,
-          opacity: 0.05,
-          side: THREE.BackSide,
-          depthWrite: false,
-          blending: THREE.AdditiveBlending
-        });
-      }
-    });
-    flyModel.add(backPass);
-
-    console.log('Fly head loaded. Scale:', flyScale.toFixed(2), 'Size:', size.x.toFixed(0), size.y.toFixed(0), size.z.toFixed(0));
+    console.log('[fly] added to scene');
   }, (progress) => {
     if (progress.total) {
       const pct = Math.round((progress.loaded / progress.total) * 100);
       loadpct.textContent = 'Model ' + pct + '%';
+    } else {
+      loadpct.textContent = 'Model ' + (progress.loaded / 1024 / 1024).toFixed(1) + ' MB';
     }
   }, (error) => {
-    console.error('Failed to load fly model:', error);
+    console.error('[fly] load failed:', error);
   });
 }
 
