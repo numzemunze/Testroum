@@ -252,13 +252,6 @@
     font-family: inherit;
   }
 
-  button svg {
-    width: 13px;
-    height: 13px;
-    flex-shrink: 0;
-    opacity: 0.9;
-  }
-
   button:active {
     background: linear-gradient(155deg, rgba(40, 40, 48, 0.9), rgba(24, 24, 30, 0.95));
     color: #ffffff;
@@ -294,6 +287,46 @@
       0 8px 24px rgba(0, 0, 0, 0.6),
       inset 0 1px 0 rgba(255, 255, 255, 0.12),
       0 0 24px rgba(255, 255, 255, 0.22);
+  }
+
+  #panel-pull {
+    position: fixed;
+    bottom: 96px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 80px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(14px) saturate(1.4);
+    -webkit-backdrop-filter: blur(14px) saturate(1.4);
+    cursor: pointer;
+    transition: opacity 0.25s, transform 0.25s;
+    touch-action: none;
+    z-index: 5;
+  }
+
+  #panel-pull.hidden {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px);
+    pointer-events: none;
+  }
+
+  #panel-pull .pull-inner {
+    width: 32px;
+    height: 3px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.3);
+    transition: all 0.15s;
+  }
+
+  #panel-pull:active .pull-inner {
+    background: rgba(255, 255, 255, 0.7);
+    width: 44px;
   }
 
   #loading {
@@ -343,14 +376,10 @@
 <div id="hud">-</div>
 <div id="info"></div>
 <div id="controls">
-  <button id="btn-stim">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-    </svg>
-    <span>Stimulate</span>
-  </button>
+  <button id="btn-stim">Stimulate</button>
   <button id="btn-stim-fab" aria-label="Stimulate">⚡</button>
 </div>
+<div id="panel-pull" class="hidden"><div class="pull-inner"></div></div>
 
 <script type="importmap">
 {
@@ -735,6 +764,8 @@ function showNeuronEdges(idx, maxPerDirection) {
 // Tap detection
 // ---------------------------------------------------------------
 const infoEl = document.getElementById('info');
+const pullTab = document.getElementById('panel-pull');
+let lastSelectedIdx = -1;
 let pointerDownTime = 0, pointerDownX = 0, pointerDownY = 0;
 
 // Panel drag state
@@ -773,6 +804,7 @@ function endPanelDrag(e) {
       infoEl.style.display = 'none';
       infoEl.style.transform = '';
       infoEl.style.transition = '';
+      if (lastSelectedIdx !== -1) pullTab.classList.remove('hidden');
     }, 300);
   } else {
     infoEl.style.transform = 'translateY(0px)';
@@ -821,6 +853,7 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   }
 
   if (bestIdx !== -1) {
+    lastSelectedIdx = bestIdx;
     showInfo(bestIdx);
     highlightNeuron(bestIdx);
     showNeuronEdges(bestIdx, 60);
@@ -828,6 +861,7 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     infoEl.style.display = 'none';
     clearEdgeMesh();
     unhighlight();
+    if (lastSelectedIdx !== -1) pullTab.classList.remove('hidden');
   }
 });
 
@@ -884,6 +918,7 @@ function showInfo(idx) {
   infoEl.style.display = 'block';
   infoEl.style.transform = '';
   infoEl.style.transition = '';
+  pullTab.classList.add('hidden');
 
   document.getElementById('th-slider').addEventListener('input', (e) => {
     threshold[idx] = parseFloat(e.target.value);
@@ -1024,6 +1059,7 @@ document.getElementById('btn-stim').addEventListener('click', () => {
     target = (Math.random() * neurons.length) | 0;
     highlightNeuron(target);
   }
+  lastSelectedIdx = target;
 
   // Collapse panel so it doesn't block the view during stimulation
   infoEl.style.transition = 'transform 0.25s cubic-bezier(0.22, 1, 0.36, 1)';
@@ -1032,10 +1068,18 @@ document.getElementById('btn-stim').addEventListener('click', () => {
     infoEl.style.display = 'none';
     infoEl.style.transform = '';
     infoEl.style.transition = '';
+    if (lastSelectedIdx !== -1) pullTab.classList.remove('hidden');
   }, 260);
 
   showNeuronEdges(target, 60);
   stimulate(target);
+});
+
+pullTab.addEventListener('click', () => {
+  if (lastSelectedIdx === -1) return;
+  showInfo(lastSelectedIdx);
+  highlightNeuron(lastSelectedIdx);
+  showNeuronEdges(lastSelectedIdx, 60);
 });
 
 // ---------------------------------------------------------------
@@ -1104,4 +1148,4 @@ addEventListener('resize', () => {
 })();
 </script>
 </body>
-</html>
+ </html>
