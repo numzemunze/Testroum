@@ -623,9 +623,9 @@ composer.addPass(renderPass);
 
 const bloomPass = new UnrealBloomPass(
   new THREE.Vector2(innerWidth, innerHeight),
-  0.85,   // strength
-  0.5,    // radius
-  0.15    // threshold
+  0.35,   // strength was 0.85
+  0.45,   // radius was 0.5
+  0.55    // threshold was 0.15, much higher now
 );
 composer.addPass(bloomPass);
 
@@ -711,18 +711,18 @@ const BUFFER_SIZE = 6;
 
 const SIM_STEP_MS = 33;
 const REFRACTORY_STEPS = 5;
-const WEIGHT_SCALE = 1.2;
-const SPONTANEOUS_PER_STEP = 6;
+const WEIGHT_SCALE = 0.55;
+const SPONTANEOUS_PER_STEP = 4;
 let simAccum = 0;
 let lastSimTime = 0;
 
-// Global fatigue prevents runaway excitation
+// Aggressive fatigue + hard cap on spikes
 let globalFatigue = 0;
-const FATIGUE_PER_SPIKE = 0.004;
-const FATIGUE_DECAY = 0.90;
-const FATIGUE_MAX = 3.0;
+const FATIGUE_PER_SPIKE = 0.015;
+const FATIGUE_DECAY = 0.82;
+const FATIGUE_MAX = 8.0;
+const MAX_SPIKES_PER_STEP = 60;
 
-// Cooldown after reset
 let settleSteps = 0;
 
 // ---------------------------------------------------------------
@@ -1054,11 +1054,12 @@ function simulateStep() {
     }
   }
 
-  // 4. Check for new spikes with fatigue-adjusted threshold
+  // 4. Check for new spikes with fatigue and hard cap
   spiked.fill(0);
   let spikeCount = 0;
   const fatigueFactor = 1 + globalFatigue;
   for (let i = 0; i < n; i++) {
+    if (spikeCount >= MAX_SPIKES_PER_STEP) break;
     if (refractory[i] > 0) continue;
     if (v[i] >= threshold[i] * fatigueFactor) {
       spiked[i] = 1;
@@ -1613,4 +1614,4 @@ addEventListener('resize', () => {
 })();
 </script>
 </body>
-</html>
+ </html>
