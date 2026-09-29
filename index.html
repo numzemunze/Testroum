@@ -45,7 +45,7 @@
     pointer-events: auto;
   }
 
-  #hud-reset {
+  #hud-reset, #hud-fly {
     width: 40px;
     height: 40px;
     flex: 0 0 40px;
@@ -62,16 +62,18 @@
     cursor: pointer;
     transition: all 0.15s;
   }
-
-  #hud-reset svg {
+  #hud-reset svg, #hud-fly svg {
     width: 14px;
     height: 14px;
   }
-
-  #hud-reset:active {
+  #hud-reset:active, #hud-fly:active {
     background: rgba(255, 255, 255, 0.12);
     color: #ffffff;
     transform: scale(0.94);
+  }
+  #hud-fly.active {
+    background: rgba(255, 255, 255, 0.15);
+    color: #ffffff;
   }
 
   #group-bar {
@@ -564,6 +566,16 @@
         <path d="M3 3v5h5"/>
       </svg>
     </button>
+    <button id="hud-fly" class="active" aria-label="Toggle fly shell">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+        <ellipse cx="12" cy="14" rx="3" ry="6"/>
+        <circle cx="12" cy="4.5" r="2"/>
+        <path d="M9.5 10 Q4 6 2.5 8.5"/>
+        <path d="M14.5 10 Q20 6 21.5 8.5"/>
+        <path d="M9.5 14 Q3 14 2 17"/>
+        <path d="M14.5 14 Q21 14 22 17"/>
+      </svg>
+    </button>
   </div>
 </div>
 <div id="group-bar"></div>
@@ -623,9 +635,9 @@ composer.addPass(renderPass);
 
 const bloomPass = new UnrealBloomPass(
   new THREE.Vector2(innerWidth, innerHeight),
-  0.35,   // strength was 0.85
-  0.45,   // radius was 0.5
-  0.55    // threshold was 0.15, much higher now
+  0.35,
+  0.45,
+  0.55
 );
 composer.addPass(bloomPass);
 
@@ -661,6 +673,80 @@ function makeCircleTexture() {
 const circleTexture = makeCircleTexture();
 
 // ---------------------------------------------------------------
+// Fly shell (stylized transparent head outline)
+// ---------------------------------------------------------------
+function buildFlyShell() {
+  const group = new THREE.Group();
+
+  const shellMat = new THREE.MeshBasicMaterial({
+    color: 0x6fb7d9,
+    transparent: true,
+    opacity: 0.035,
+    side: THREE.DoubleSide,
+    depthWrite: false
+  });
+
+  const edgeMat = new THREE.LineBasicMaterial({
+    color: 0x6fb7d9,
+    transparent: true,
+    opacity: 0.14,
+    depthWrite: false
+  });
+
+  const eyeMat = new THREE.MeshBasicMaterial({
+    color: 0x6fb7d9,
+    transparent: true,
+    opacity: 0.06,
+    side: THREE.DoubleSide,
+    depthWrite: false
+  });
+
+  // Head capsule
+  const headGeo = new THREE.SphereGeometry(1, 20, 14);
+  const head = new THREE.Mesh(headGeo, shellMat);
+  head.scale.set(500, 400, 550);
+  head.position.set(0, 20, 150);
+  group.add(head);
+
+  const headEdges = new THREE.LineSegments(
+    new THREE.EdgesGeometry(headGeo, 18),
+    edgeMat
+  );
+  headEdges.scale.copy(head.scale);
+  headEdges.position.copy(head.position);
+  group.add(headEdges);
+
+  // Compound eyes on both sides
+  const eyeGeo = new THREE.SphereGeometry(1, 14, 10);
+  for (const side of [-1, 1]) {
+    const eye = new THREE.Mesh(eyeGeo, eyeMat);
+    eye.scale.set(220, 260, 280);
+    eye.position.set(side * 330, 20, 100);
+    group.add(eye);
+
+    const eyeEdges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(eyeGeo, 22),
+      edgeMat
+    );
+    eyeEdges.scale.copy(eye.scale);
+    eyeEdges.position.copy(eye.position);
+    group.add(eyeEdges);
+  }
+
+  // Antennae
+  const antPositions = new Float32Array([
+    -60, 380, 500,   -140, 720, 850,
+     60, 380, 500,    140, 720, 850
+  ]);
+  const antGeo = new THREE.BufferGeometry();
+  antGeo.setAttribute('position', new THREE.BufferAttribute(antPositions, 3));
+  group.add(new THREE.LineSegments(antGeo, edgeMat));
+
+  group.visible = true;
+  return group;
+}
+
+// ---------------------------------------------------------------
 // Type colors
 // ---------------------------------------------------------------
 function hashStringToHue(s) {
@@ -690,6 +776,7 @@ let baseColors = null;
 let currentEdgeMesh = null;
 let highlightedIdx = -1;
 let activeStim = null;
+let flyShell = null;
 
 // LIF simulation state
 let v = null;
@@ -828,7 +915,6 @@ function buildAdjacency(data) {
     reverseAdjacency[i].sort((a, b) => b.weight - a.weight);
   }
 
-  // Flat arrays for fast simulation
   adjStart = new Int32Array(n + 1);
   let total = 0;
   for (let i = 0; i < n; i++) {
@@ -845,7 +931,6 @@ function buildAdjacency(data) {
     const e = edges[i];
     const pos = adjStart[e.source] + cursor[e.source];
     adjTarget[pos] = e.target;
-    // Normalize weight to a stable range [0, 0.5)
     adjWeight[pos] = (e.weight / (1 + e.weight)) * WEIGHT_SCALE;
     cursor[e.source]++;
   }
@@ -1530,6 +1615,12 @@ document.getElementById('hud-reset').addEventListener('click', () => {
   updateActivityColors();
 });
 
+document.getElementById('hud-fly').addEventListener('click', () => {
+  if (!flyShell) return;
+  flyShell.visible = !flyShell.visible;
+  document.getElementById('hud-fly').classList.toggle('active', flyShell.visible);
+});
+
 pullTab.addEventListener('click', () => {
   if (lastSelectedIdx === -1) return;
   showInfo(lastSelectedIdx);
@@ -1603,6 +1694,8 @@ addEventListener('resize', () => {
     buildNeurons(data);
     buildAdjacency(data);
     buildGroups();
+    flyShell = buildFlyShell();
+    scene.add(flyShell);
     initSimulation();
     requestAnimationFrame(animate);
     loadingEl.style.opacity = '0';
@@ -1614,4 +1707,4 @@ addEventListener('resize', () => {
 })();
 </script>
 </body>
- </html>
+</html>
