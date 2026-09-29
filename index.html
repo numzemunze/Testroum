@@ -252,6 +252,13 @@
     font-family: inherit;
   }
 
+  button svg {
+    width: 12px;
+    height: 12px;
+    opacity: 0.85;
+    flex-shrink: 0;
+  }
+
   button:active {
     background: linear-gradient(155deg, rgba(40, 40, 48, 0.9), rgba(24, 24, 30, 0.95));
     color: #ffffff;
@@ -376,7 +383,12 @@
 <div id="hud">-</div>
 <div id="info"></div>
 <div id="controls">
-  <button id="btn-stim">Stimulate</button>
+  <button id="btn-stim">
+    <svg viewBox="0 0 24 24" fill="currentColor" stroke="none">
+      <path d="M13 2L4.5 13.5H11L10 22L19.5 10.5H13L13 2Z"/>
+    </svg>
+    <span>Stimulate</span>
+  </button>
   <button id="btn-stim-fab" aria-label="Stimulate">⚡</button>
 </div>
 <div id="panel-pull" class="hidden"><div class="pull-inner"></div></div>
