@@ -20,15 +20,58 @@
   canvas { display: block; touch-action: none; }
 
   #hud {
-    position: fixed; top: 18px; left: 18px;
+    position: fixed;
+    top: 18px; left: 18px; right: 18px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    pointer-events: none;
+    z-index: 4;
+  }
+
+  #hud-stats {
     font-size: 10px;
     font-weight: 500;
     letter-spacing: 1.2px;
     text-transform: uppercase;
     opacity: 0.45;
     line-height: 1.8;
-    pointer-events: none;
     font-variant-numeric: tabular-nums;
+  }
+
+  #hud-buttons {
+    display: flex;
+    gap: 8px;
+    pointer-events: auto;
+  }
+
+  #hud-reset {
+    width: 40px;
+    height: 40px;
+    flex: 0 0 40px;
+    padding: 0;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(14px) saturate(1.4);
+    -webkit-backdrop-filter: blur(14px) saturate(1.4);
+    color: rgba(255, 255, 255, 0.7);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  #hud-reset svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  #hud-reset:active {
+    background: rgba(255, 255, 255, 0.12);
+    color: #ffffff;
+    transform: scale(0.94);
   }
 
   #info {
@@ -349,7 +392,17 @@
   <div class="bar"><div id="loadbar"></div></div>
   <div class="pct" id="loadpct">0 MB</div>
 </div>
-<div id="hud">-</div>
+<div id="hud">
+  <div id="hud-stats">-</div>
+  <div id="hud-buttons">
+    <button id="hud-reset" aria-label="Reset simulation">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 12a9 9 0 1 0 3-6.7L3 8"/>
+        <path d="M3 3v5h5"/>
+      </svg>
+    </button>
+  </div>
+</div>
 <div id="info"></div>
 <div id="controls">
   <button id="btn-stim">
@@ -1098,6 +1151,32 @@ document.getElementById('btn-stim').addEventListener('click', () => {
   stimulate(target);
 });
 
+document.getElementById('hud-reset').addEventListener('click', () => {
+  if (!v) return;
+
+  // Reset simulation state
+  v.fill(0);
+  refractory.fill(0);
+  spiked.fill(0);
+  for (let i = 0; i < BUFFER_SIZE; i++) spikeBuffer[i].length = 0;
+  bufferHead = 0;
+
+  // Reset per-neuron modifications to defaults
+  threshold.fill(1.0);
+  decay.fill(0.90);
+  outWeight.fill(1.0);
+
+  // Clear visual overlays
+  clearEdgeMesh();
+  clearStim();
+  unhighlight();
+  infoEl.style.display = 'none';
+  pullTab.classList.add('hidden');
+
+  // Force a full color refresh
+  updateActivityColors();
+});
+
 pullTab.addEventListener('click', () => {
   if (lastSelectedIdx === -1) return;
   showInfo(lastSelectedIdx);
@@ -1108,7 +1187,7 @@ pullTab.addEventListener('click', () => {
 // ---------------------------------------------------------------
 // Render loop
 // ---------------------------------------------------------------
-const hudEl = document.getElementById('hud');
+const hudStats = document.getElementById('hud-stats');
 let lastFpsTime = performance.now();
 let frameCount = 0;
 
@@ -1138,9 +1217,20 @@ function animate(now) {
   frameCount++;
   if (now - lastFpsTime > 1000) {
     const fps = Math.round(frameCount * 1000 / (now - lastFpsTime));
-    const w = renderer.domElement.width;
-    const h = renderer.domElement.height;
-    hudEl.innerHTML = `${fps} FPS<br>${neurons ? neurons.length.toLocaleString('en') : 0} neurons<br>${w}x${h}`;
+
+    // Count active neurons (potential > 0.1)
+    let activeCount = 0;
+    let spikingCount = 0;
+    for (let i = 0; i < v.length; i++) {
+      if (spiked[i]) spikingCount++;
+      if (v[i] > threshold[i] * 0.1) activeCount++;
+    }
+
+    hudStats.innerHTML =
+      `${fps} FPS<br>` +
+      `${activeCount.toLocaleString('en')} active<br>` +
+      `${spikingCount.toLocaleString('en')} spiking`;
+
     frameCount = 0;
     lastFpsTime = now;
   }
