@@ -485,6 +485,13 @@ let adjStart = null;
 let adjTarget = null;
 let adjWeight = null;
 
+// Realistic LIF additions: inhibition + axonal delay
+let inhibitory = null;
+let axonDelay = null;
+let spikeBuffer = null;
+let bufferHead = 0;
+const BUFFER_SIZE = 6;
+
 const SIM_STEP_MS = 33;
 const REFRACTORY_STEPS = 5;
 const WEIGHT_SCALE = 0.15;
@@ -627,13 +634,40 @@ function initSimulation() {
   outWeight = new Float32Array(n).fill(1.0);
   refractory = new Int32Array(n);
   spiked = new Uint8Array(n);
+  inhibitory = new Uint8Array(n);
+  axonDelay = new Int8Array(n);
+
+  let inhCount = 0;
+  for (let i = 0; i < n; i++) {
+    if (Math.random() < 0.20) {
+      inhibitory[i] = 1;
+      inhCount++;
+    }
+    axonDelay[i] = 1 + ((Math.random() * 4) | 0);
+  }
+  console.log('Inhibitory neurons:', inhCount, '/', n);
+
+  spikeBuffer = new Array(BUFFER_SIZE);
+  for (let i = 0; i < BUFFER_SIZE; i++) spikeBuffer[i] = [];
+  bufferHead = 0;
 }
+
+// Debug reset — callable from console via resetSim()
+window.resetSim = function () {
+  if (!v) return;
+  v.fill(0);
+  refractory.fill(0);
+  spiked.fill(0);
+  for (let i = 0; i < BUFFER_SIZE; i++) spikeBuffer[i].length = 0;
+  bufferHead = 0;
+  console.log('Simulation reset');
+};
 
 // One simulation step
 function simulateStep() {
   const n = neurons.length;
 
-  // Decay potentials
+  // 1. Decay potentials
   for (let i = 0; i < n; i++) {
     if (refractory[i] > 0) {
       refractory[i]--;
@@ -643,37 +677,45 @@ function simulateStep() {
     v[i] *= decay[i];
   }
 
-  // Propagate from neurons that spiked on previous step
-  for (let i = 0; i < n; i++) {
-    if (!spiked[i]) continue;
-    const start = adjStart[i];
-    const end = adjStart[i + 1];
-    const w = outWeight[i];
-    for (let k = start; k < end; k++) {
-      v[adjTarget[k]] += adjWeight[k] * w;
+  // 2. Deliver spikes that were scheduled for this step
+  const incoming = spikeBuffer[bufferHead];
+  for (let k = 0; k < incoming.length; k++) {
+    const src = incoming[k];
+    const start = adjStart[src];
+    const end = adjStart[src + 1];
+    const w = outWeight[src];
+    const sign = inhibitory[src] ? -1 : 1;
+    for (let e = start; e < end; e++) {
+      v[adjTarget[e]] += adjWeight[e] * w * sign;
     }
   }
+  incoming.length = 0;
 
-  // Clear spike flags (they were consumed)
-  spiked.fill(0);
-
-  // Spontaneous activity
+  // 3. Spontaneous activity
   for (let s = 0; s < SPONTANEOUS_PER_STEP; s++) {
     const idx = (Math.random() * n) | 0;
     v[idx] += 2.5;
   }
 
-  // Check for new spikes
+  // 4. Check for new spikes
+  spiked.fill(0);
   for (let i = 0; i < n; i++) {
     if (refractory[i] > 0) continue;
     if (v[i] >= threshold[i]) {
       spiked[i] = 1;
       refractory[i] = REFRACTORY_STEPS;
       v[i] = 0;
+
+      // Schedule propagation after axon delay
+      const slot = (bufferHead + axonDelay[i]) % BUFFER_SIZE;
+      spikeBuffer[slot].push(i);
     } else if (v[i] > threshold[i] * 2) {
       v[i] = threshold[i] * 2;
     }
   }
+
+  // 5. Advance buffer
+  bufferHead = (bufferHead + 1) % BUFFER_SIZE;
 }
 
 // Update point colors based on activity
@@ -899,6 +941,7 @@ function showInfo(idx) {
     <div class="close" onclick="document.getElementById('info').style.display='none'">x</div>
     <div class="title">Neuron #${idx}</div>
     <div class="subtitle">${n.type || 'unknown'}</div>
+    <div class="row"><span>Class</span><b>${inhibitory[idx] ? 'Inhibitory' : 'Excitatory'}</b></div>
     <div class="row"><span>Outgoing links</span><b>${out}</b></div>
     <div class="row"><span>Incoming links</span><b>${inc}</b></div>
     <div class="slider-row">
@@ -1148,4 +1191,4 @@ addEventListener('resize', () => {
 })();
 </script>
 </body>
- </html>
+</html>
