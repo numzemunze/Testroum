@@ -636,9 +636,9 @@ composer.addPass(renderPass);
 
 const bloomPass = new UnrealBloomPass(
   new THREE.Vector2(innerWidth, innerHeight),
-  0.25,
-  0.4,
-  0.65
+  0.20,
+  0.35,
+  0.75
 );
 composer.addPass(bloomPass);
 
@@ -674,7 +674,7 @@ function makeCircleTexture() {
 const circleTexture = makeCircleTexture();
 
 // ---------------------------------------------------------------
-// Load fly head model — clean wireframe outline
+// Load fly head model — lightweight point cloud sample
 // ---------------------------------------------------------------
 function loadFlyModel() {
   const loader = new GLTFLoader();
@@ -692,42 +692,72 @@ function loadFlyModel() {
 
     console.log('[fly] size', size.x.toFixed(1), size.y.toFixed(1), size.z.toFixed(1));
 
-    const targetSize = 1100;
+    const targetSize = 750;
     const maxDim = Math.max(size.x, size.y, size.z);
     flyScale = targetSize / maxDim;
 
-    // Inner wrapper for rotation and centering
     const inner = new THREE.Group();
     model.position.sub(center);
     inner.add(model);
-
-    // Rotate to correct orientation
-    inner.rotation.set(0, Math.PI, 0);
+    inner.rotation.set(0, -Math.PI / 2, 0);
 
     const wrapper = new THREE.Group();
     wrapper.add(inner);
     wrapper.scale.setScalar(flyScale);
 
-    // Convert every mesh to a clean wireframe outline
+    // Replace with a very light point cloud sample instead of wireframe
+    let meshIndex = 0;
+    const meshData = [];
     model.traverse((node) => {
-      if (node.isMesh) {
-        if (node.material) {
-          if (Array.isArray(node.material)) node.material.forEach((m) => m.dispose());
-          else node.material.dispose();
-        }
-        node.material = new THREE.MeshBasicMaterial({
-          color: 0x6fb7d9,
-          wireframe: true,
-          transparent: true,
-          opacity: 0.06,
-          depthWrite: false
-        });
-      }
+      if (node.isMesh) meshData.push(node);
     });
+
+    for (const node of meshData) {
+      const geom = node.geometry;
+      const posAttr = geom.attributes.position;
+      if (!posAttr) continue;
+
+      // Sample every Nth vertex to build a light point cloud
+      const totalVerts = posAttr.count;
+      const step = Math.max(1, Math.floor(totalVerts / 3000));
+      const sampled = [];
+      for (let i = 0; i < totalVerts; i += step) {
+        sampled.push(
+          posAttr.getX(i),
+          posAttr.getY(i),
+          posAttr.getZ(i)
+        );
+      }
+
+      const pointsGeom = new THREE.BufferGeometry();
+      pointsGeom.setAttribute('position', new THREE.Float32BufferAttribute(sampled, 3));
+
+      const pointsMat = new THREE.PointsMaterial({
+        color: 0x6fb7d9,
+        size: 2.5,
+        sizeAttenuation: true,
+        transparent: true,
+        opacity: 0.35,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+      });
+
+      const pts = new THREE.Points(pointsGeom, pointsMat);
+      pts.position.copy(node.position);
+      pts.rotation.copy(node.rotation);
+      pts.scale.copy(node.scale);
+      inner.add(pts);
+      meshIndex++;
+    }
+
+    // Hide original meshes
+    for (const node of meshData) {
+      node.visible = false;
+    }
 
     flyModel = wrapper;
     scene.add(wrapper);
-    console.log('[fly] added');
+    console.log('[fly] added, mesh count:', meshIndex);
   }, (progress) => {
     if (progress.total) {
       loadpct.textContent = 'Model ' + Math.round((progress.loaded / progress.total) * 100) + '%';
