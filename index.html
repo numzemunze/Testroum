@@ -526,11 +526,20 @@ let bufferHead = 0;
 const BUFFER_SIZE = 6;
 
 const SIM_STEP_MS = 33;
-const REFRACTORY_STEPS = 3;
-const WEIGHT_SCALE = 0.55;
-const SPONTANEOUS_PER_STEP = 8;
+const REFRACTORY_STEPS = 5;
+const WEIGHT_SCALE = 0.30;
+const SPONTANEOUS_PER_STEP = 2;
 let simAccum = 0;
 let lastSimTime = 0;
+
+// Global fatigue prevents runaway excitation
+let globalFatigue = 0;
+const FATIGUE_PER_SPIKE = 0.004;
+const FATIGUE_DECAY = 0.90;
+const FATIGUE_MAX = 3.0;
+
+// Cooldown after reset
+let settleSteps = 0;
 
 // ---------------------------------------------------------------
 // Load brain.json
@@ -710,7 +719,7 @@ function simulateStep() {
     v[i] *= decay[i];
   }
 
-  // 2. Deliver spikes that were scheduled for this step
+  // 2. Deliver scheduled spikes
   const incoming = spikeBuffer[bufferHead];
   for (let k = 0; k < incoming.length; k++) {
     const src = incoming[k];
@@ -724,22 +733,27 @@ function simulateStep() {
   }
   incoming.length = 0;
 
-  // 3. Spontaneous activity
-  for (let s = 0; s < SPONTANEOUS_PER_STEP; s++) {
-    const idx = (Math.random() * n) | 0;
-    v[idx] += 2.5;
+  // 3. Spontaneous activity (skip during settle)
+  if (settleSteps > 0) {
+    settleSteps--;
+  } else {
+    for (let s = 0; s < SPONTANEOUS_PER_STEP; s++) {
+      const idx = (Math.random() * n) | 0;
+      v[idx] += 2.5;
+    }
   }
 
-  // 4. Check for new spikes
+  // 4. Check for new spikes with fatigue-adjusted threshold
   spiked.fill(0);
+  let spikeCount = 0;
+  const fatigueFactor = 1 + globalFatigue;
   for (let i = 0; i < n; i++) {
     if (refractory[i] > 0) continue;
-    if (v[i] >= threshold[i]) {
+    if (v[i] >= threshold[i] * fatigueFactor) {
       spiked[i] = 1;
       refractory[i] = REFRACTORY_STEPS;
       v[i] = 0;
-
-      // Schedule propagation after axon delay
+      spikeCount++;
       const slot = (bufferHead + axonDelay[i]) % BUFFER_SIZE;
       spikeBuffer[slot].push(i);
     } else if (v[i] > threshold[i] * 2) {
@@ -747,7 +761,12 @@ function simulateStep() {
     }
   }
 
-  // 5. Advance buffer
+  // 5. Update global fatigue
+  globalFatigue += spikeCount * FATIGUE_PER_SPIKE;
+  globalFatigue *= FATIGUE_DECAY;
+  if (globalFatigue > FATIGUE_MAX) globalFatigue = FATIGUE_MAX;
+
+  // 6. Advance buffer
   bufferHead = (bufferHead + 1) % BUFFER_SIZE;
 }
 
@@ -1154,26 +1173,25 @@ document.getElementById('btn-stim').addEventListener('click', () => {
 document.getElementById('hud-reset').addEventListener('click', () => {
   if (!v) return;
 
-  // Reset simulation state
   v.fill(0);
   refractory.fill(0);
   spiked.fill(0);
   for (let i = 0; i < BUFFER_SIZE; i++) spikeBuffer[i].length = 0;
   bufferHead = 0;
 
-  // Reset per-neuron modifications to defaults
   threshold.fill(1.0);
   decay.fill(0.90);
   outWeight.fill(1.0);
 
-  // Clear visual overlays
+  globalFatigue = 0;
+  settleSteps = 30;  // 1 second of silence before spontaneous resumes
+
   clearEdgeMesh();
   clearStim();
   unhighlight();
   infoEl.style.display = 'none';
   pullTab.classList.add('hidden');
 
-  // Force a full color refresh
   updateActivityColors();
 });
 
