@@ -674,7 +674,7 @@ function makeCircleTexture() {
 const circleTexture = makeCircleTexture();
 
 // ---------------------------------------------------------------
-// Load fly head model (glTF from GitHub Releases)
+// Load fly head model (glTF from GitHub Releases) — ghost shell
 // ---------------------------------------------------------------
 function loadFlyModel() {
   const loader = new GLTFLoader();
@@ -683,60 +683,64 @@ function loadFlyModel() {
   loader.load(url, (gltf) => {
     const model = gltf.scene;
 
+    // Compute bounding box for auto-scale and centering
     const box = new THREE.Box3().setFromObject(model);
     const size = new THREE.Vector3();
     const center = new THREE.Vector3();
     box.getSize(size);
     box.getCenter(center);
 
-    const targetSize = 900;
+    const targetSize = 1100;
     const maxDim = Math.max(size.x, size.y, size.z);
     flyScale = targetSize / maxDim;
 
+    // Create a wrapping group to handle transform cleanly
+    const wrapper = new THREE.Group();
     model.position.sub(center);
-    model.position.multiplyScalar(flyScale);
-    model.scale.setScalar(flyScale);
+    wrapper.add(model);
+    wrapper.scale.setScalar(flyScale);
+    wrapper.position.set(0, 0, 0);
 
-    // Make model body nearly invisible shell
+    // Apply ghost material to all meshes
     model.traverse((node) => {
       if (node.isMesh) {
+        // Dispose old material
+        if (node.material) {
+          if (Array.isArray(node.material)) node.material.forEach((m) => m.dispose());
+          else node.material.dispose();
+        }
+
         node.material = new THREE.MeshBasicMaterial({
-          color: 0x6fb7d9,
+          color: 0x5fb8e6,
           transparent: true,
-          opacity: 0.03,
-          side: THREE.DoubleSide,
-          depthWrite: false
+          opacity: 0.08,
+          side: THREE.FrontSide,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending
         });
       }
     });
 
-    flyModel = model;
-    scene.add(model);
+    flyModel = wrapper;
+    scene.add(wrapper);
 
-    // Build outline
-    flyOutline = new THREE.Group();
-    model.traverse((node) => {
+    // Second pass: inner glow (backfaces) for extra shell depth
+    const backPass = model.clone();
+    backPass.traverse((node) => {
       if (node.isMesh) {
-        const edges = new THREE.EdgesGeometry(node.geometry, 25);
-        const line = new THREE.LineSegments(
-          edges,
-          new THREE.LineBasicMaterial({
-            color: 0x6fb7d9,
-            transparent: true,
-            opacity: 0.16,
-            depthWrite: false
-          })
-        );
-        line.position.copy(node.position);
-        line.rotation.copy(node.rotation);
-        line.scale.copy(node.scale);
-        flyOutline.add(line);
+        node.material = new THREE.MeshBasicMaterial({
+          color: 0x3a8fc9,
+          transparent: true,
+          opacity: 0.05,
+          side: THREE.BackSide,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending
+        });
       }
     });
-    flyOutline.position.copy(model.position);
-    scene.add(flyOutline);
+    flyModel.add(backPass);
 
-    console.log('Fly head loaded. Scale:', flyScale.toFixed(2));
+    console.log('Fly head loaded. Scale:', flyScale.toFixed(2), 'Size:', size.x.toFixed(0), size.y.toFixed(0), size.z.toFixed(0));
   }, (progress) => {
     if (progress.total) {
       const pct = Math.round((progress.loaded / progress.total) * 100);
@@ -778,7 +782,6 @@ let currentEdgeMesh = null;
 let highlightedIdx = -1;
 let activeStim = null;
 let flyModel = null;
-let flyOutline = null;
 let flyScale = 1;
 
 // LIF simulation state
@@ -1619,11 +1622,9 @@ document.getElementById('hud-reset').addEventListener('click', () => {
 });
 
 document.getElementById('hud-fly').addEventListener('click', () => {
-  if (!flyModel || !flyOutline) return;
-  const visible = !flyModel.visible;
-  flyModel.visible = visible;
-  flyOutline.visible = visible;
-  document.getElementById('hud-fly').classList.toggle('active', visible);
+  if (!flyModel) return;
+  flyModel.visible = !flyModel.visible;
+  document.getElementById('hud-fly').classList.toggle('active', flyModel.visible);
 });
 
 pullTab.addEventListener('click', () => {
