@@ -603,6 +603,7 @@
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
@@ -673,77 +674,77 @@ function makeCircleTexture() {
 const circleTexture = makeCircleTexture();
 
 // ---------------------------------------------------------------
-// Fly shell (stylized transparent head outline)
+// Load fly head model (glTF from GitHub Releases)
 // ---------------------------------------------------------------
-function buildFlyShell() {
-  const group = new THREE.Group();
+function loadFlyModel() {
+  const loader = new GLTFLoader();
+  const url = 'https://github.com/numzemunze/Testroum/releases/download/V1/head.glb';
 
-  const shellMat = new THREE.MeshBasicMaterial({
-    color: 0x6fb7d9,
-    transparent: true,
-    opacity: 0.035,
-    side: THREE.DoubleSide,
-    depthWrite: false
+  loader.load(url, (gltf) => {
+    const model = gltf.scene;
+
+    const box = new THREE.Box3().setFromObject(model);
+    const size = new THREE.Vector3();
+    const center = new THREE.Vector3();
+    box.getSize(size);
+    box.getCenter(center);
+
+    const targetSize = 900;
+    const maxDim = Math.max(size.x, size.y, size.z);
+    flyScale = targetSize / maxDim;
+
+    model.position.sub(center);
+    model.position.multiplyScalar(flyScale);
+    model.scale.setScalar(flyScale);
+
+    // Make model body nearly invisible shell
+    model.traverse((node) => {
+      if (node.isMesh) {
+        node.material = new THREE.MeshBasicMaterial({
+          color: 0x6fb7d9,
+          transparent: true,
+          opacity: 0.03,
+          side: THREE.DoubleSide,
+          depthWrite: false
+        });
+      }
+    });
+
+    flyModel = model;
+    scene.add(model);
+
+    // Build outline
+    flyOutline = new THREE.Group();
+    model.traverse((node) => {
+      if (node.isMesh) {
+        const edges = new THREE.EdgesGeometry(node.geometry, 25);
+        const line = new THREE.LineSegments(
+          edges,
+          new THREE.LineBasicMaterial({
+            color: 0x6fb7d9,
+            transparent: true,
+            opacity: 0.16,
+            depthWrite: false
+          })
+        );
+        line.position.copy(node.position);
+        line.rotation.copy(node.rotation);
+        line.scale.copy(node.scale);
+        flyOutline.add(line);
+      }
+    });
+    flyOutline.position.copy(model.position);
+    scene.add(flyOutline);
+
+    console.log('Fly head loaded. Scale:', flyScale.toFixed(2));
+  }, (progress) => {
+    if (progress.total) {
+      const pct = Math.round((progress.loaded / progress.total) * 100);
+      loadpct.textContent = 'Model ' + pct + '%';
+    }
+  }, (error) => {
+    console.error('Failed to load fly model:', error);
   });
-
-  const edgeMat = new THREE.LineBasicMaterial({
-    color: 0x6fb7d9,
-    transparent: true,
-    opacity: 0.14,
-    depthWrite: false
-  });
-
-  const eyeMat = new THREE.MeshBasicMaterial({
-    color: 0x6fb7d9,
-    transparent: true,
-    opacity: 0.06,
-    side: THREE.DoubleSide,
-    depthWrite: false
-  });
-
-  // Head capsule
-  const headGeo = new THREE.SphereGeometry(1, 20, 14);
-  const head = new THREE.Mesh(headGeo, shellMat);
-  head.scale.set(500, 400, 550);
-  head.position.set(0, 20, 150);
-  group.add(head);
-
-  const headEdges = new THREE.LineSegments(
-    new THREE.EdgesGeometry(headGeo, 18),
-    edgeMat
-  );
-  headEdges.scale.copy(head.scale);
-  headEdges.position.copy(head.position);
-  group.add(headEdges);
-
-  // Compound eyes on both sides
-  const eyeGeo = new THREE.SphereGeometry(1, 14, 10);
-  for (const side of [-1, 1]) {
-    const eye = new THREE.Mesh(eyeGeo, eyeMat);
-    eye.scale.set(220, 260, 280);
-    eye.position.set(side * 330, 20, 100);
-    group.add(eye);
-
-    const eyeEdges = new THREE.LineSegments(
-      new THREE.EdgesGeometry(eyeGeo, 22),
-      edgeMat
-    );
-    eyeEdges.scale.copy(eye.scale);
-    eyeEdges.position.copy(eye.position);
-    group.add(eyeEdges);
-  }
-
-  // Antennae
-  const antPositions = new Float32Array([
-    -60, 380, 500,   -140, 720, 850,
-     60, 380, 500,    140, 720, 850
-  ]);
-  const antGeo = new THREE.BufferGeometry();
-  antGeo.setAttribute('position', new THREE.BufferAttribute(antPositions, 3));
-  group.add(new THREE.LineSegments(antGeo, edgeMat));
-
-  group.visible = true;
-  return group;
 }
 
 // ---------------------------------------------------------------
@@ -776,7 +777,9 @@ let baseColors = null;
 let currentEdgeMesh = null;
 let highlightedIdx = -1;
 let activeStim = null;
-let flyShell = null;
+let flyModel = null;
+let flyOutline = null;
+let flyScale = 1;
 
 // LIF simulation state
 let v = null;
@@ -1616,9 +1619,11 @@ document.getElementById('hud-reset').addEventListener('click', () => {
 });
 
 document.getElementById('hud-fly').addEventListener('click', () => {
-  if (!flyShell) return;
-  flyShell.visible = !flyShell.visible;
-  document.getElementById('hud-fly').classList.toggle('active', flyShell.visible);
+  if (!flyModel || !flyOutline) return;
+  const visible = !flyModel.visible;
+  flyModel.visible = visible;
+  flyOutline.visible = visible;
+  document.getElementById('hud-fly').classList.toggle('active', visible);
 });
 
 pullTab.addEventListener('click', () => {
@@ -1694,8 +1699,7 @@ addEventListener('resize', () => {
     buildNeurons(data);
     buildAdjacency(data);
     buildGroups();
-    flyShell = buildFlyShell();
-    scene.add(flyShell);
+    loadFlyModel();
     initSimulation();
     requestAnimationFrame(animate);
     loadingEl.style.opacity = '0';
