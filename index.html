@@ -674,11 +674,11 @@ function makeCircleTexture() {
 const circleTexture = makeCircleTexture();
 
 // ---------------------------------------------------------------
-// Load fly head model (glTF from GitHub Releases) — ghost shell v2
+// Load fly head model (glTF from same origin — GitHub Pages)
 // ---------------------------------------------------------------
 function loadFlyModel() {
   const loader = new GLTFLoader();
-  const url = 'https://github.com/numzemunze/Testroum/releases/download/V1/head.glb';
+  const url = 'head.glb';
 
   loader.load(url, (gltf) => {
     console.log('[fly] gltf loaded');
