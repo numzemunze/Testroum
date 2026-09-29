@@ -50,6 +50,8 @@
     max-height: 46vh;
     overflow-y: auto;
     animation: slideUp 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+    touch-action: pan-y;
+    will-change: transform;
   }
 
   @keyframes slideUp {
@@ -107,6 +109,25 @@
   #info .close:active {
     background: rgba(255, 255, 255, 0.12);
     color: #fff;
+  }
+
+  #info .handle {
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 44px;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.18);
+    cursor: grab;
+    touch-action: none;
+    transition: background 0.15s, width 0.15s;
+  }
+
+  #info .handle:active {
+    background: rgba(255, 255, 255, 0.4);
+    width: 56px;
   }
 
   #info input[type="range"] {
@@ -658,6 +679,55 @@ function showNeuronEdges(idx, maxPerDirection) {
 const infoEl = document.getElementById('info');
 let pointerDownTime = 0, pointerDownX = 0, pointerDownY = 0;
 
+// Panel drag state
+let panelDrag = null;
+
+infoEl.addEventListener('pointerdown', (e) => {
+  if (!e.target.classList.contains('handle')) return;
+  e.preventDefault();
+  panelDrag = {
+    startY: e.clientY,
+    offsetY: 0,
+    pointerId: e.pointerId
+  };
+  infoEl.style.transition = 'none';
+  e.target.setPointerCapture(e.pointerId);
+});
+
+infoEl.addEventListener('pointermove', (e) => {
+  if (!panelDrag || e.pointerId !== panelDrag.pointerId) return;
+  const dy = Math.max(0, e.clientY - panelDrag.startY);
+  panelDrag.offsetY = dy;
+  infoEl.style.transform = `translateY(${dy}px)`;
+});
+
+function endPanelDrag(e) {
+  if (!panelDrag || e.pointerId !== panelDrag.pointerId) return;
+  const dy = panelDrag.offsetY;
+  panelDrag = null;
+
+  infoEl.style.transition = 'transform 0.28s cubic-bezier(0.22, 1, 0.36, 1)';
+  const panelHeight = infoEl.offsetHeight;
+
+  if (dy > panelHeight * 0.35 || dy > 120) {
+    infoEl.style.transform = `translateY(${panelHeight + 60}px)`;
+    setTimeout(() => {
+      infoEl.style.display = 'none';
+      infoEl.style.transform = '';
+      infoEl.style.transition = '';
+    }, 300);
+  } else {
+    infoEl.style.transform = 'translateY(0px)';
+    setTimeout(() => {
+      infoEl.style.transform = '';
+      infoEl.style.transition = '';
+    }, 300);
+  }
+}
+
+infoEl.addEventListener('pointerup', endPanelDrag);
+infoEl.addEventListener('pointercancel', endPanelDrag);
+
 renderer.domElement.addEventListener('pointerdown', (e) => {
   pointerDownTime = performance.now();
   pointerDownX = e.clientX;
@@ -733,6 +803,7 @@ function showInfo(idx) {
   const inc = reverseAdjacency[idx].length;
 
   infoEl.innerHTML = `
+    <div class="handle"></div>
     <div class="close" onclick="document.getElementById('info').style.display='none'">x</div>
     <div class="title">Neuron #${idx}</div>
     <div class="subtitle">${n.type || 'unknown'}</div>
@@ -753,6 +824,8 @@ function showInfo(idx) {
     <button class="reset-btn" id="reset-neuron">Reset this neuron</button>
   `;
   infoEl.style.display = 'block';
+  infoEl.style.transform = '';
+  infoEl.style.transition = '';
 
   document.getElementById('th-slider').addEventListener('input', (e) => {
     threshold[idx] = parseFloat(e.target.value);
