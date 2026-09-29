@@ -74,6 +74,170 @@
     transform: scale(0.94);
   }
 
+  /* -------- Group bar (horizontal pill scroller) -------- */
+  #group-bar {
+    position: fixed;
+    top: 78px;
+    left: 0; right: 0;
+    display: flex;
+    gap: 8px;
+    padding: 4px 14px 14px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    z-index: 3;
+    pointer-events: auto;
+    mask-image: linear-gradient(to right, transparent, black 14px, black calc(100% - 14px), transparent);
+    -webkit-mask-image: linear-gradient(to right, transparent, black 14px, black calc(100% - 14px), transparent);
+  }
+  #group-bar::-webkit-scrollbar { display: none; }
+
+  .group-pill {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(14px) saturate(1.4);
+    -webkit-backdrop-filter: blur(14px) saturate(1.4);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.7);
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: inherit;
+    white-space: nowrap;
+  }
+  .group-pill:active {
+    background: rgba(255, 255, 255, 0.12);
+    color: #ffffff;
+    transform: scale(0.96);
+  }
+  .group-pill.active {
+    background: rgba(255, 255, 255, 0.14);
+    border-color: rgba(255, 255, 255, 0.35);
+    color: #ffffff;
+  }
+  .group-pill .count {
+    opacity: 0.5;
+    font-variant-numeric: tabular-nums;
+    font-size: 9px;
+  }
+
+  #group-panel {
+    position: fixed;
+    bottom: 104px;
+    left: 14px; right: 14px;
+    background: linear-gradient(155deg, rgba(22, 22, 28, 0.9), rgba(12, 12, 16, 0.95));
+    backdrop-filter: blur(24px) saturate(1.4);
+    -webkit-backdrop-filter: blur(24px) saturate(1.4);
+    border-radius: 20px;
+    padding: 18px 20px 20px;
+    display: none;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    z-index: 6;
+    animation: slideUp 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  #group-panel .gp-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #ffffff;
+    margin-bottom: 4px;
+  }
+  #group-panel .gp-sub {
+    font-size: 10px;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    opacity: 0.4;
+    margin-bottom: 12px;
+  }
+  #group-panel .gp-slider {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+  }
+  #group-panel .gp-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    opacity: 0.55;
+    margin-bottom: 4px;
+  }
+  #group-panel .gp-value {
+    color: #ffffff;
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+    font-size: 11px;
+    opacity: 0.9;
+  }
+  #group-panel input[type="range"] {
+    width: 100%;
+    margin: 6px 0 2px;
+    -webkit-appearance: none;
+    background: transparent;
+    height: 20px;
+  }
+  #group-panel input[type="range"]::-webkit-slider-runnable-track {
+    height: 2px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 1px;
+  }
+  #group-panel input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px; height: 16px;
+    margin-top: -7px;
+    border-radius: 50%;
+    background: #ffffff;
+    box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.08), 0 2px 8px rgba(0, 0, 0, 0.4);
+  }
+  #group-panel .gp-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+  }
+  #group-panel .gp-btn {
+    flex: 1;
+    padding: 11px;
+    font-size: 10px;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    font-weight: 500;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    color: rgba(255, 255, 255, 0.7);
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: inherit;
+  }
+  #group-panel .gp-btn:active {
+    background: rgba(255, 255, 255, 0.12);
+    color: #ffffff;
+  }
+  #group-panel .gp-close {
+    position: absolute;
+    top: 14px; right: 16px;
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.5);
+    cursor: pointer;
+  }
+
   #info {
     position: fixed;
     bottom: 104px;
@@ -403,6 +567,8 @@
     </button>
   </div>
 </div>
+<div id="group-bar"></div>
+<div id="group-panel"></div>
 <div id="info"></div>
 <div id="controls">
   <button id="btn-stim">
@@ -667,6 +833,143 @@ function buildAdjacency(data) {
   }
 }
 
+// ---------------------------------------------------------------
+// Group by type prefix
+// ---------------------------------------------------------------
+let groupMap = null;      // prefix -> [neuron indices]
+let groupNames = null;    // sorted array of prefixes
+let selectedGroup = null;
+let groupSet = null;      // fast lookup Set for current selection
+const groupBar = document.getElementById('group-bar');
+const groupPanel = document.getElementById('group-panel');
+
+function buildGroups() {
+  groupMap = new Map();
+  for (let i = 0; i < neurons.length; i++) {
+    const type = neurons[i].type || 'unknown';
+    // Take prefix up to first digit (max 4 chars)
+    const match = type.match(/^[A-Za-z]+/);
+    const prefix = match ? match[0].slice(0, 4) : 'OTHER';
+    if (!groupMap.has(prefix)) groupMap.set(prefix, []);
+    groupMap.get(prefix).push(i);
+  }
+  // Sort by count descending
+  groupNames = Array.from(groupMap.keys()).sort((a, b) => groupMap.get(b).length - groupMap.get(a).length);
+
+  // Build pills
+  groupBar.innerHTML = '';
+  for (const name of groupNames) {
+    const count = groupMap.get(name).length;
+    const pill = document.createElement('button');
+    pill.className = 'group-pill';
+    pill.dataset.group = name;
+    pill.innerHTML = `<span>${name}</span><span class="count">${count}</span>`;
+    pill.addEventListener('click', () => selectGroup(name));
+    groupBar.appendChild(pill);
+  }
+}
+
+function selectGroup(name) {
+  // Toggle off if same group tapped again
+  if (selectedGroup === name) {
+    clearGroupSelection();
+    return;
+  }
+  selectedGroup = name;
+  groupSet = new Set(groupMap.get(name));
+
+  // Hide individual neuron panel if it was open
+  infoEl.style.display = 'none';
+
+  // Highlight pills
+  document.querySelectorAll('.group-pill').forEach((p) => {
+    p.classList.toggle('active', p.dataset.group === name);
+  });
+
+  // Immediate visual update (updateActivityColors will keep it in sync each frame)
+  updateActivityColors();
+
+  // Open group panel
+  showGroupPanel(name);
+}
+
+function clearGroupSelection() {
+  selectedGroup = null;
+  groupSet = null;
+  document.querySelectorAll('.group-pill').forEach((p) => p.classList.remove('active'));
+  groupPanel.style.display = 'none';
+
+  // Restore base colors
+  const arr = colorAttr.array;
+  for (let i = 0; i < neurons.length; i++) {
+    arr[i * 3]     = baseColors[i * 3];
+    arr[i * 3 + 1] = baseColors[i * 3 + 1];
+    arr[i * 3 + 2] = baseColors[i * 3 + 2];
+  }
+  colorAttr.needsUpdate = true;
+}
+
+function showGroupPanel(name) {
+  const members = groupMap.get(name);
+  const sample = members[0];
+  const th = threshold[sample];
+  const dc = decay[sample];
+  const ow = outWeight[sample];
+
+  groupPanel.innerHTML = `
+    <div class="gp-close" id="gp-close">x</div>
+    <div class="gp-title">${name}</div>
+    <div class="gp-sub">${members.length.toLocaleString('en')} neurons</div>
+    <div class="gp-slider">
+      <div class="gp-label"><span>Threshold</span><span class="gp-value" id="gp-th-val">${th.toFixed(2)}</span></div>
+      <input type="range" id="gp-th" min="0.2" max="3.0" step="0.05" value="${th}">
+    </div>
+    <div class="gp-slider">
+      <div class="gp-label"><span>Decay</span><span class="gp-value" id="gp-dc-val">${dc.toFixed(2)}</span></div>
+      <input type="range" id="gp-dc" min="0.5" max="0.99" step="0.01" value="${dc}">
+    </div>
+    <div class="gp-slider">
+      <div class="gp-label"><span>Outgoing strength</span><span class="gp-value" id="gp-ow-val">${ow.toFixed(2)}</span></div>
+      <input type="range" id="gp-ow" min="0.1" max="3.0" step="0.05" value="${ow}">
+    </div>
+    <div class="gp-actions">
+      <button class="gp-btn" id="gp-apply">Apply to all</button>
+      <button class="gp-btn" id="gp-reset">Reset group</button>
+    </div>
+  `;
+  groupPanel.style.display = 'block';
+
+  document.getElementById('gp-th').addEventListener('input', (e) => {
+    document.getElementById('gp-th-val').textContent = parseFloat(e.target.value).toFixed(2);
+  });
+  document.getElementById('gp-dc').addEventListener('input', (e) => {
+    document.getElementById('gp-dc-val').textContent = parseFloat(e.target.value).toFixed(2);
+  });
+  document.getElementById('gp-ow').addEventListener('input', (e) => {
+    document.getElementById('gp-ow-val').textContent = parseFloat(e.target.value).toFixed(2);
+  });
+  document.getElementById('gp-apply').addEventListener('click', () => {
+    const t = parseFloat(document.getElementById('gp-th').value);
+    const d = parseFloat(document.getElementById('gp-dc').value);
+    const o = parseFloat(document.getElementById('gp-ow').value);
+    for (const idx of members) {
+      threshold[idx] = t;
+      decay[idx] = d;
+      outWeight[idx] = o;
+    }
+    showGroupPanel(name);
+  });
+  document.getElementById('gp-reset').addEventListener('click', () => {
+    for (const idx of members) {
+      threshold[idx] = 1.0;
+      decay[idx] = 0.90;
+      outWeight[idx] = 1.0;
+    }
+    showGroupPanel(name);
+  });
+  document.getElementById('gp-close').addEventListener('click', clearGroupSelection);
+}
+
 // Initialize simulation arrays
 function initSimulation() {
   const n = neurons.length;
@@ -775,20 +1078,46 @@ const HOT_COLOR = new THREE.Color(0xffffff);
 function updateActivityColors() {
   const n = neurons.length;
   const arr = colorAttr.array;
-  for (let i = 0; i < n; i++) {
-    let intensity;
-    if (spiked[i]) {
-      intensity = 1.0;
-    } else {
-      intensity = v[i] / threshold[i];
-      if (intensity > 1) intensity = 1;
+
+  if (selectedGroup !== null && groupSet !== null) {
+    // Group mode: dim non-members, brighten members with activity
+    for (let i = 0; i < n; i++) {
+      const k = i * 3;
+      if (groupSet.has(i)) {
+        let intensity;
+        if (spiked[i]) intensity = 1.0;
+        else {
+          intensity = v[i] / threshold[i];
+          if (intensity > 1) intensity = 1;
+        }
+        // Base group tint 0.95,0.95,1.0 blended toward pure white by intensity
+        arr[k]     = 0.95 + 0.05 * intensity;
+        arr[k + 1] = 0.95 + 0.05 * intensity;
+        arr[k + 2] = 1.0;
+      } else {
+        arr[k]     = baseColors[k] * 0.15;
+        arr[k + 1] = baseColors[k + 1] * 0.15;
+        arr[k + 2] = baseColors[k + 2] * 0.15;
+      }
     }
-    const base = baseColors;
-    const k = i * 3;
-    arr[k]     = base[k]     + (1 - base[k])     * intensity * 0.9;
-    arr[k + 1] = base[k + 1] + (1 - base[k + 1]) * intensity * 0.9;
-    arr[k + 2] = base[k + 2] + (1 - base[k + 2]) * intensity * 0.9;
+  } else {
+    // Normal mode
+    for (let i = 0; i < n; i++) {
+      let intensity;
+      if (spiked[i]) {
+        intensity = 1.0;
+      } else {
+        intensity = v[i] / threshold[i];
+        if (intensity > 1) intensity = 1;
+      }
+      const base = baseColors;
+      const k = i * 3;
+      arr[k]     = base[k]     + (1 - base[k])     * intensity * 0.9;
+      arr[k + 1] = base[k + 1] + (1 - base[k + 1]) * intensity * 0.9;
+      arr[k + 2] = base[k + 2] + (1 - base[k + 2]) * intensity * 0.9;
+    }
   }
+
   // Keep highlighted neuron white
   if (highlightedIdx !== -1) {
     const k = highlightedIdx * 3;
@@ -947,6 +1276,8 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   }
 
   if (bestIdx !== -1) {
+    // Clear group selection if active (both panels overlap)
+    if (selectedGroup !== null) clearGroupSelection();
     lastSelectedIdx = bestIdx;
     showInfo(bestIdx);
     highlightNeuron(bestIdx);
@@ -1186,6 +1517,9 @@ document.getElementById('hud-reset').addEventListener('click', () => {
   globalFatigue = 0;
   settleSteps = 30;  // 1 second of silence before spontaneous resumes
 
+  // Clear group selection if active
+  if (selectedGroup !== null) clearGroupSelection();
+
   clearEdgeMesh();
   clearStim();
   unhighlight();
@@ -1268,6 +1602,7 @@ addEventListener('resize', () => {
     const data = await loadBrain();
     buildNeurons(data);
     buildAdjacency(data);
+    buildGroups();
     initSimulation();
     requestAnimationFrame(animate);
     loadingEl.style.opacity = '0';
