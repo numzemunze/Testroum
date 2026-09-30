@@ -678,7 +678,7 @@ const circleTexture = makeCircleTexture();
 // ---------------------------------------------------------------
 function loadFlyModel() {
   const loader = new GLTFLoader();
-  const url = 'head.glb';
+  const url = 'head_decimated.glb';
 
   loader.load(url, (gltf) => {
     console.log('[fly] gltf loaded');
@@ -692,18 +692,18 @@ function loadFlyModel() {
 
     console.log('[fly] size', size.x.toFixed(1), size.y.toFixed(1), size.z.toFixed(1));
 
-    const targetSize = 750;
-    const maxDim = Math.max(size.x, size.y, size.z);
-    flyScale = targetSize / maxDim;
+    // Size the head from the brain: its longest axis ends up 15% larger than the brain's
+    flyScale = (brainMaxDim * HEAD_PADDING) / HEAD_MODEL_MAX_DIM;
 
     const inner = new THREE.Group();
     model.position.sub(center);
     inner.add(model);
-    inner.rotation.set(0, -Math.PI / 2, 0);
+    inner.rotation.set(0, Math.PI, 0);
 
     const wrapper = new THREE.Group();
     wrapper.add(inner);
     wrapper.scale.setScalar(flyScale);
+    wrapper.position.copy(brainCenter);
 
     // Replace with a very light point cloud sample instead of wireframe
     let meshIndex = 0;
@@ -799,6 +799,27 @@ let highlightedIdx = -1;
 let activeStim = null;
 let flyModel = null;
 let flyScale = 1;
+
+// Head model dimensions and brain-relative placement
+const HEAD_MODEL_MAX_DIM = 8.4211; // head_decimated.glb bbox max dimension (on z)
+const HEAD_PADDING = 1.15;         // the head wraps the brain with 15% margin
+let brainCenter = new THREE.Vector3(0, 0, 0);
+let brainMaxDim = 1;
+
+// Measure the brain bounding box once, after buildNeurons, for head placement
+function computeBrainBounds() {
+  const box = new THREE.Box3();
+  const p = new THREE.Vector3();
+  for (let i = 0; i < neurons.length; i++) {
+    const n = neurons[i];
+    box.expandByPoint(p.set(n.x, n.y, n.z));
+  }
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  box.getCenter(brainCenter);
+  brainMaxDim = Math.max(size.x, size.y, size.z);
+  console.log('[brain] center', brainCenter.x.toFixed(1), brainCenter.y.toFixed(1), brainCenter.z.toFixed(1), 'max dim', brainMaxDim.toFixed(1));
+}
 
 // LIF simulation state
 let v = null;
@@ -1714,6 +1735,7 @@ addEventListener('resize', () => {
   try {
     const data = await loadBrain();
     buildNeurons(data);
+    computeBrainBounds();
     buildAdjacency(data);
     buildGroups();
     loadFlyModel();
