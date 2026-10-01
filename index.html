@@ -549,6 +549,54 @@
     opacity: 0.4;
     font-variant-numeric: tabular-nums;
   }
+
+  /* Temporary orientation diagnostic panel */
+  #rot-panel {
+    position: fixed;
+    top: 74px;
+    right: 18px;
+    z-index: 4;
+    width: 188px;
+    padding: 10px 12px 6px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(14px) saturate(1.4);
+    -webkit-backdrop-filter: blur(14px) saturate(1.4);
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 10px;
+    font-family: inherit;
+    pointer-events: auto;
+  }
+  #rot-panel .rot-title {
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    opacity: 0.45;
+    margin-bottom: 8px;
+  }
+  #rot-panel .rot-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  #rot-panel .rot-row label {
+    width: 10px;
+    opacity: 0.6;
+  }
+  #rot-panel input[type="range"] {
+    flex: 1;
+    min-width: 0;
+    height: 16px;
+    accent-color: #6fb7d9;
+    background: transparent;
+  }
+  #rot-panel .rot-val {
+    width: 34px;
+    text-align: right;
+    color: #6fb7d9;
+    font-variant-numeric: tabular-nums;
+  }
 </style>
 </head>
 <body>
@@ -577,6 +625,12 @@
       </svg>
     </button>
   </div>
+</div>
+<div id="rot-panel">
+  <div class="rot-title">Head rotation</div>
+  <div class="rot-row"><label for="rot-x">X</label><input id="rot-x" type="range" min="-180" max="180" step="5" value="0"><span class="rot-val" id="rot-x-val">0</span></div>
+  <div class="rot-row"><label for="rot-y">Y</label><input id="rot-y" type="range" min="-180" max="180" step="5" value="180"><span class="rot-val" id="rot-y-val">180</span></div>
+  <div class="rot-row"><label for="rot-z">Z</label><input id="rot-z" type="range" min="-180" max="180" step="5" value="0"><span class="rot-val" id="rot-z-val">0</span></div>
 </div>
 <div id="group-bar"></div>
 <div id="group-panel"></div>
@@ -698,7 +752,8 @@ function loadFlyModel() {
     const inner = new THREE.Group();
     model.position.sub(center);
     inner.add(model);
-    inner.rotation.set(0, Math.PI, 0);
+    flyInner = inner;
+    applyHeadRotation();
 
     const wrapper = new THREE.Group();
     wrapper.add(inner);
@@ -799,6 +854,18 @@ let highlightedIdx = -1;
 let activeStim = null;
 let flyModel = null;
 let flyScale = 1;
+let flyInner = null;
+const HEAD_ROT_DEG = { x: 0, y: 180, z: 0 };
+
+// Temporary diagnostic: drive the head orientation from the rotation sliders
+function applyHeadRotation() {
+  if (!flyInner) return;
+  flyInner.rotation.set(
+    THREE.MathUtils.degToRad(HEAD_ROT_DEG.x),
+    THREE.MathUtils.degToRad(HEAD_ROT_DEG.y),
+    THREE.MathUtils.degToRad(HEAD_ROT_DEG.z)
+  );
+}
 
 // Head model dimensions and brain-relative placement
 const HEAD_MODEL_MAX_DIM = 8.4211; // head_decimated.glb bbox max dimension (on z)
@@ -1663,6 +1730,18 @@ document.getElementById('hud-fly').addEventListener('click', () => {
   flyModel.visible = !flyModel.visible;
   document.getElementById('hud-fly').classList.toggle('active', flyModel.visible);
 });
+
+// Temporary head rotation sliders (diagnostic only, not persisted)
+for (const axis of ['x', 'y', 'z']) {
+  const input = document.getElementById('rot-' + axis);
+  const readout = document.getElementById('rot-' + axis + '-val');
+  if (!input || !readout) continue;
+  input.addEventListener('input', () => {
+    HEAD_ROT_DEG[axis] = Number(input.value);
+    readout.textContent = input.value;
+    applyHeadRotation();
+  });
+}
 
 pullTab.addEventListener('click', () => {
   if (lastSelectedIdx === -1) return;
