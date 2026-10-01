@@ -708,55 +708,47 @@ function loadFlyModel() {
     flyWrapper = wrapper;
     applyHeadOffset();
 
-    // Replace with a very light point cloud sample instead of wireframe
-    let meshIndex = 0;
-    const meshData = [];
-    model.traverse((node) => {
-      if (node.isMesh) meshData.push(node);
+    // Fresnel rim outline drawn on the mesh itself
+    const rimMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        uColor: { value: new THREE.Vector3(0.435, 0.718, 0.851) },
+        uPower: { value: 2.5 },
+        uIntensity: { value: 1.0 }
+      },
+      vertexShader: [
+        'varying vec3 vNormal;',
+        'varying vec3 vViewDir;',
+        'void main() {',
+        '  vec4 worldPos = modelMatrix * vec4(position, 1.0);',
+        '  vNormal = normalize(mat3(modelMatrix) * normal);',
+        '  vViewDir = normalize(cameraPosition - worldPos.xyz);',
+        '  gl_Position = projectionMatrix * viewMatrix * worldPos;',
+        '}'
+      ].join('\n'),
+      fragmentShader: [
+        'uniform vec3 uColor;',
+        'uniform float uPower;',
+        'uniform float uIntensity;',
+        'varying vec3 vNormal;',
+        'varying vec3 vViewDir;',
+        'void main() {',
+        '  float rim = pow(1.0 - abs(dot(normalize(vNormal), normalize(vViewDir))), uPower);',
+        '  gl_FragColor = vec4(uColor, rim * uIntensity);',
+        '}'
+      ].join('\n'),
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide
     });
 
-    for (const node of meshData) {
-      const geom = node.geometry;
-      const posAttr = geom.attributes.position;
-      if (!posAttr) continue;
-
-      // Sample every Nth vertex to build a light point cloud
-      const totalVerts = posAttr.count;
-      const step = Math.max(1, Math.floor(totalVerts / 3000));
-      const sampled = [];
-      for (let i = 0; i < totalVerts; i += step) {
-        sampled.push(
-          posAttr.getX(i),
-          posAttr.getY(i),
-          posAttr.getZ(i)
-        );
-      }
-
-      const pointsGeom = new THREE.BufferGeometry();
-      pointsGeom.setAttribute('position', new THREE.Float32BufferAttribute(sampled, 3));
-
-      const pointsMat = new THREE.PointsMaterial({
-        color: 0x6fb7d9,
-        size: 2.5,
-        sizeAttenuation: true,
-        transparent: true,
-        opacity: 0.35,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending
-      });
-
-      const pts = new THREE.Points(pointsGeom, pointsMat);
-      pts.position.copy(node.position);
-      pts.rotation.copy(node.rotation);
-      pts.scale.copy(node.scale);
-      model.add(pts);
+    let meshIndex = 0;
+    model.traverse((node) => {
+      if (!node.isMesh) return;
+      node.material = rimMaterial;
+      node.visible = true;
       meshIndex++;
-    }
-
-    // Hide original meshes
-    for (const node of meshData) {
-      node.visible = false;
-    }
+    });
 
     flyModel = wrapper;
     scene.add(wrapper);
