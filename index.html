@@ -636,13 +636,13 @@
 </div>
 <div id="rot-panel">
   <div class="rot-title">Head rotation</div>
-  <div class="rot-row"><label for="rot-x">X</label><input id="rot-x" type="range" min="-180" max="180" step="5" value="0"><span class="rot-val" id="rot-x-val">0</span></div>
-  <div class="rot-row"><label for="rot-y">Y</label><input id="rot-y" type="range" min="-180" max="180" step="5" value="180"><span class="rot-val" id="rot-y-val">180</span></div>
+  <div class="rot-row"><label for="rot-x">X</label><input id="rot-x" type="range" min="-180" max="180" step="5" value="55"><span class="rot-val" id="rot-x-val">55</span></div>
+  <div class="rot-row"><label for="rot-y">Y</label><input id="rot-y" type="range" min="-180" max="180" step="5" value="-90"><span class="rot-val" id="rot-y-val">-90</span></div>
   <div class="rot-row"><label for="rot-z">Z</label><input id="rot-z" type="range" min="-180" max="180" step="5" value="0"><span class="rot-val" id="rot-z-val">0</span></div>
   <div class="rot-sep">Head offset</div>
-  <div class="rot-row"><label for="off-x">X</label><input id="off-x" type="range" min="-150" max="150" step="5" value="0"><span class="rot-val" id="off-x-val">0</span></div>
-  <div class="rot-row"><label for="off-y">Y</label><input id="off-y" type="range" min="-150" max="150" step="5" value="0"><span class="rot-val" id="off-y-val">0</span></div>
-  <div class="rot-row"><label for="off-z">Z</label><input id="off-z" type="range" min="-150" max="150" step="5" value="0"><span class="rot-val" id="off-z-val">0</span></div>
+  <div class="rot-row"><label for="off-x">X</label><input id="off-x" type="range" min="-300" max="300" step="5" value="0"><span class="rot-val" id="off-x-val">0</span></div>
+  <div class="rot-row"><label for="off-y">Y</label><input id="off-y" type="range" min="-300" max="300" step="5" value="0"><span class="rot-val" id="off-y-val">0</span></div>
+  <div class="rot-row"><label for="off-z">Z</label><input id="off-z" type="range" min="-300" max="300" step="5" value="0"><span class="rot-val" id="off-z-val">0</span></div>
 </div>
 <div id="group-bar"></div>
 <div id="group-panel"></div>
@@ -868,7 +868,7 @@ let activeStim = null;
 let flyModel = null;
 let flyScale = 1;
 let flyInner = null;
-const HEAD_ROT_DEG = { x: 0, y: 180, z: 0 };
+const HEAD_ROT_DEG = { x: 55, y: -90, z: 0 };
 
 // Temporary diagnostic: drive the head orientation from the rotation sliders
 function applyHeadRotation() {
