@@ -550,61 +550,6 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* Temporary orientation diagnostic panel */
-  #rot-panel {
-    position: fixed;
-    top: 74px;
-    right: 18px;
-    z-index: 4;
-    width: 188px;
-    padding: 10px 12px 6px;
-    border-radius: 12px;
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    backdrop-filter: blur(14px) saturate(1.4);
-    -webkit-backdrop-filter: blur(14px) saturate(1.4);
-    color: rgba(255, 255, 255, 0.7);
-    font-size: 10px;
-    font-family: inherit;
-    pointer-events: auto;
-  }
-  #rot-panel .rot-title {
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    opacity: 0.45;
-    margin-bottom: 8px;
-  }
-  #rot-panel .rot-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 6px;
-  }
-  #rot-panel .rot-row label {
-    width: 10px;
-    opacity: 0.6;
-  }
-  #rot-panel input[type="range"] {
-    flex: 1;
-    min-width: 0;
-    height: 16px;
-    accent-color: #6fb7d9;
-    background: transparent;
-  }
-  #rot-panel .rot-val {
-    width: 34px;
-    text-align: right;
-    color: #6fb7d9;
-    font-variant-numeric: tabular-nums;
-  }
-  #rot-panel .rot-sep {
-    margin: 10px 0 8px;
-    padding-top: 8px;
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    opacity: 0.45;
-  }
 </style>
 </head>
 <body>
@@ -633,16 +578,6 @@
       </svg>
     </button>
   </div>
-</div>
-<div id="rot-panel">
-  <div class="rot-title">Head rotation</div>
-  <div class="rot-row"><label for="rot-x">X</label><input id="rot-x" type="range" min="-180" max="180" step="5" value="55"><span class="rot-val" id="rot-x-val">55</span></div>
-  <div class="rot-row"><label for="rot-y">Y</label><input id="rot-y" type="range" min="-180" max="180" step="5" value="-90"><span class="rot-val" id="rot-y-val">-90</span></div>
-  <div class="rot-row"><label for="rot-z">Z</label><input id="rot-z" type="range" min="-180" max="180" step="5" value="0"><span class="rot-val" id="rot-z-val">0</span></div>
-  <div class="rot-sep">Head offset</div>
-  <div class="rot-row"><label for="off-x">X</label><input id="off-x" type="range" min="-300" max="300" step="5" value="0"><span class="rot-val" id="off-x-val">0</span></div>
-  <div class="rot-row"><label for="off-y">Y</label><input id="off-y" type="range" min="-300" max="300" step="5" value="0"><span class="rot-val" id="off-y-val">0</span></div>
-  <div class="rot-row"><label for="off-z">Z</label><input id="off-z" type="range" min="-300" max="300" step="5" value="0"><span class="rot-val" id="off-z-val">0</span></div>
 </div>
 <div id="group-bar"></div>
 <div id="group-panel"></div>
@@ -870,7 +805,7 @@ let flyScale = 1;
 let flyInner = null;
 const HEAD_ROT_DEG = { x: 55, y: -90, z: 0 };
 
-// Temporary diagnostic: drive the head orientation from the rotation sliders
+// Head orientation in degrees, baked from interactive tuning
 function applyHeadRotation() {
   if (!flyInner) return;
   flyInner.rotation.set(
@@ -883,7 +818,7 @@ function applyHeadRotation() {
 let flyWrapper = null;
 const HEAD_OFFSET = { x: 0, y: 0, z: 0 };
 
-// Temporary diagnostic: world-space offset applied to the head wrapper after scale and rotation
+// World-space offset applied to the head wrapper after scale and rotation
 function applyHeadOffset() {
   if (!flyWrapper) return;
   flyWrapper.position.set(
@@ -1756,30 +1691,6 @@ document.getElementById('hud-fly').addEventListener('click', () => {
   flyModel.visible = !flyModel.visible;
   document.getElementById('hud-fly').classList.toggle('active', flyModel.visible);
 });
-
-// Temporary head rotation sliders (diagnostic only, not persisted)
-for (const axis of ['x', 'y', 'z']) {
-  const input = document.getElementById('rot-' + axis);
-  const readout = document.getElementById('rot-' + axis + '-val');
-  if (!input || !readout) continue;
-  input.addEventListener('input', () => {
-    HEAD_ROT_DEG[axis] = Number(input.value);
-    readout.textContent = input.value;
-    applyHeadRotation();
-  });
-}
-
-// Temporary head offset sliders (world units, applied after scale and rotation)
-for (const axis of ['x', 'y', 'z']) {
-  const input = document.getElementById('off-' + axis);
-  const readout = document.getElementById('off-' + axis + '-val');
-  if (!input || !readout) continue;
-  input.addEventListener('input', () => {
-    HEAD_OFFSET[axis] = Number(input.value);
-    readout.textContent = input.value;
-    applyHeadOffset();
-  });
-}
 
 pullTab.addEventListener('click', () => {
   if (lastSelectedIdx === -1) return;
